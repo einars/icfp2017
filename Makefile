@@ -7,7 +7,7 @@ clean:
 all-clean: clean all
 
 run: all
-	./main.native maps/stock/gen1.json
+	./main.native 2 maps/stock/gen1.json
 
 .SILENT:
 .PHONY: all clean all-clean

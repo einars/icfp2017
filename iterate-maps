@@ -1,0 +1,1 @@
+find maps/stock -type f -name \*json | xargs -n 1 ./main.native 2

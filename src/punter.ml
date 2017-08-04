@@ -6,6 +6,7 @@ type player_id_t = int
 type player_t = {
   id: player_id_t;
   is_initialized: bool;
+  offline_state: string option;
   name: string;
 }
 
@@ -15,7 +16,11 @@ type site_t = {
   y: Yojson.Basic.json;
 }
 
-type river_t = int * int
+type river_t = {
+  source: int;
+  target: int;
+  owner: player_id_t option
+}
 type mine_t = int
 
 type move_t = {
@@ -54,7 +59,10 @@ let take_rivers sjs =
   List.map sjs ~f:(fun elem ->
     let source = member "source" elem |> to_int in
     let target  = member "target" elem |> to_int in
-    (source, target)
+    {
+      source; target;
+      owner = None
+    }
   )
 ;;
 
@@ -76,14 +84,32 @@ let load_map file_name =
 ;;
 
 let print_map m = 
-  (* P.printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
+  P.printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
     (m.source)
     (List.length m.sites)
     (List.length m.rivers)
     (List.length m.mines);
-    *)
-  ()
-
 ;;
 
 
+let make_players n_players =
+  let out = ref [] in
+  for i = 0 to n_players - 1 do
+    out := {
+      id = i;
+      is_initialized = false;
+      name = "";
+      offline_state = None;
+    } :: !out
+  done;
+  !out
+;;
+
+
+let new_game map n_players = 
+  {
+    map;
+    players = make_players n_players;
+    moves = [];
+  }
+;;
