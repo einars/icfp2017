@@ -3,5 +3,8 @@ open Core
 module P = Printf
 
 let _ = (
-  printf "I serve you, my master.\n"
+
+  let map = Punter.load_map Sys.argv.(1) in
+  Punter.print_map map;
+
 )

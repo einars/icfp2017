@@ -1,5 +1,5 @@
 all:
-	corebuild -quiet -classic-display src/main.native
+	corebuild -quiet -classic-display -pkg yojson src/main.native
 
 clean:
 	corebuild -clean
@@ -7,7 +7,7 @@ clean:
 all-clean: clean all
 
 run: all
-	./main.native
+	./main.native maps/stock/gen1.json
 
 .SILENT:
 .PHONY: all clean all-clean
