@@ -1,5 +1,5 @@
 all:
-	corebuild -quiet -classic-display -pkg yojson src/main.native
+	corebuild -quiet -classic-display -pkg yojson -pkg async -pkg unix src/main.native
 
 clean:
 	corebuild -clean

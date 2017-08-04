@@ -1,6 +1,5 @@
 open Core
-
-module P = Printf
+open Async
 
 let _ = (
 
@@ -12,7 +11,11 @@ let _ = (
     Punter.print_map map;
 
     let game = Punter.new_game map n_players in
-    ()
+
+    Punter.host_game game;
+
+    never_returns ( Scheduler.go () )
+
   end
 
 

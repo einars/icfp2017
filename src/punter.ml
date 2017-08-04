@@ -1,13 +1,18 @@
 open Core
-module P = Printf
+(*
+Test strings:
 
-type player_id_t = int
+19:{"me":"pipelstock"}
+
+
+*)
+open Async
 
 type player_t = {
-  id: player_id_t;
-  is_initialized: bool;
-  offline_state: string option;
-  name: string;
+  id: int;
+  mutable is_initialized: bool;
+  mutable offline_state: string option;
+  mutable name: string;
 }
 
 type site_t = {
@@ -19,12 +24,10 @@ type site_t = {
 type river_t = {
   source: int;
   target: int;
-  owner: player_id_t option
+  owner: int option
 }
-type mine_t = int
-
 type move_t = {
-  player_id: player_id_t;
+  player_id: int;
   move: river_t;
 }
 
@@ -32,7 +35,7 @@ type map_t = {
   source: string;
   sites: site_t list;
   rivers: river_t list;
-  mines: mine_t list;
+  mines: int list;
 }
 
 
@@ -72,7 +75,7 @@ let take_mines sjs =
 
 
 let load_map file_name = 
-  P.printf "Loading map %s...\n" file_name;
+  printf "Loading map %s...\n" file_name;
   let mjs = Yojson.Basic.from_file file_name in
   let open Yojson.Basic.Util in
   {
@@ -84,7 +87,7 @@ let load_map file_name =
 ;;
 
 let print_map m = 
-  P.printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
+  printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
     (m.source)
     (List.length m.sites)
     (List.length m.rivers)
@@ -102,7 +105,7 @@ let make_players n_players =
       offline_state = None;
     } :: !out
   done;
-  !out
+  List.rev !out
 ;;
 
 
@@ -113,3 +116,86 @@ let new_game map n_players =
     moves = [];
   }
 ;;
+
+
+
+
+
+let choose_next_player game =
+  List.find ~f:(fun e -> e.is_initialized = false) game.players
+
+
+let err_empty_json = Yojson.Basic.from_string "{}"
+
+let read_json_line r =
+  (* Reader.read_until ~keep_delim:false r (`Pred (fun c -> not (Char.is_digit c)))  *)
+  Reader.read_until ~keep_delim:false r (`Pred (fun c -> c = ':'))
+  >>= (function
+  | `Eof -> return err_empty_json
+  | `Eof_without_delim whatever -> return err_empty_json
+  | `Ok len_s ->
+    printf "will read %s bytes\n%!" len_s;
+    let len = int_of_string len_s in
+    let buf = String.create len in
+    Reader.read r buf ~len
+    >>| (function
+    | `Eof -> err_empty_json
+    | `Ok len_s ->
+      printf "Read [%s]" buf;
+      Yojson.Basic.from_string buf
+    )
+  )
+;;
+
+let write_json_line w s =
+  let data = sprintf "%d:%s" (String.length s) s in Writer.write w data
+;;
+
+
+let host_game game = (
+
+  let all_connected_ivar = Ivar.create() in
+  let all_connected = Ivar.read all_connected_ivar in
+
+  let handshake _addr r w  = 
+
+    match choose_next_player game with
+    | None ->
+      Writer.write w "All seats already taken, sorry";
+      return ()
+
+    | Some player -> (
+
+      player.is_initialized <- true;
+      printf "Got player %d\n%!" player.id;
+
+      read_json_line r 
+      >>= fun json ->
+      let name = Yojson.Basic.Util.member "me" json |> Yojson.Basic.Util.to_string in
+      printf "Got player name %s\n%!" name;
+      player.name <- name;
+      (sprintf {|{"you": "%s"}|} name) |> write_json_line w;
+      if (choose_next_player game = None) then (
+        printf "All players seem to be connected, let's try to notify the master\n%!";
+        Ivar.fill all_connected_ivar true;
+      );
+      return ()
+    )
+  in
+
+
+
+  let server = Tcp.Server.create
+    ~on_handler_error: `Raise
+    (Tcp.on_port 5000)
+    handshake
+  in
+  ignore ( server );
+
+  upon (all_connected) (fun x -> 
+    printf "Yes, I hear you.\n%!"
+  );
+
+)
+;;
+
