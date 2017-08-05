@@ -142,26 +142,33 @@ let err_empty_json = Yojson.Basic.from_string "{}"
 
 let read_from_player player =
   (* Reader.read_until ~keep_delim:false r (`Pred (fun c -> not (Char.is_digit c)))  *)
-  Reader.read_until ~keep_delim:false (uw player.handle_r) (`Pred (fun c -> c = ':'))
-  >>= function
-  | `Eof -> log "<< eof"; return err_empty_json
-  | `Eof_without_delim _ -> log "<< eof/no delim"; return err_empty_json
-  | `Ok len_s ->
-    let len = int_of_string (String.strip len_s) in
-    let buf = String.create len in
+  Deferred.any [
+    (after (sec 15.0) >>| fun _ -> Error "timeout");
 
-    Deferred.any [
-      (after (sec 5.0) >>| fun _ -> Error "timeout");
-      (
-      Reader.really_read (uw player.handle_r) buf ~len >>| (function
-      | `Eof _ -> Error "eof"
-      | `Ok ->
-        log "<<%d %s" player.id (String.strip buf);
-        Ok ( Yojson.Basic.from_string buf )
-      ));
-    ] >>| function
-    | Ok res -> res
-    | Error e -> raise Exit
+    (Reader.read_until ~keep_delim:false (uw player.handle_r) (`Pred (fun c -> c = ':')) >>| function
+      | `Eof -> Error "Eof"
+      | `Eof_without_delim _ -> Error "eof/no delim"
+      | `Ok len_s -> Ok len_s
+    );
+  ] >>= function
+  | Error e -> log "%s" e; raise Exit
+  | Ok len_s -> (
+      let len = int_of_string (String.strip len_s) in
+      let buf = String.create len in
+
+      Deferred.any [
+        (after (sec 5.0) >>| fun _ -> Error "timeout");
+        (
+        Reader.really_read (uw player.handle_r) buf ~len >>| (function
+        | `Eof _ -> Error "eof"
+        | `Ok ->
+          log "<<%d %s" player.id (String.strip buf);
+          Ok ( Yojson.Basic.from_string buf )
+        ));
+      ] >>| function
+      | Ok res -> res
+      | Error e -> log "%s" e; raise Exit
+    )
 ;;
 
 
