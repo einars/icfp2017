@@ -1,5 +1,0 @@
-#!/bin/sh
-
-while true; do
-  ./main.native 5001 1 maps/stock/sample.json
-done

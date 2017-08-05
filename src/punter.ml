@@ -2,7 +2,8 @@ open Core
 open Async
 
 
-let log s = ksprintf (fun s -> printf "%s\n%!" s) s
+let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then String.sub ~pos:0 ~len:512 s else s)) s
+let flush_stdout () = Writer.flushed (force Writer.stdout)
 
 module JU = Yojson.Basic.Util
 type json = Yojson.Basic.json
@@ -148,13 +149,19 @@ let read_from_player player =
   | `Ok len_s ->
     let len = int_of_string (String.strip len_s) in
     let buf = String.create len in
-    Reader.read (uw player.handle_r) buf ~len
-    >>| (function
-    | `Eof -> log "<< Eof"; err_empty_json
-    | `Ok _ ->
-      log "<<%d %s" player.id (String.strip buf);
-      Yojson.Basic.from_string buf
-    )
+
+    Deferred.any [
+      (after (sec 5.0) >>| fun _ -> Error "timeout");
+      (
+      Reader.really_read (uw player.handle_r) buf ~len >>| (function
+      | `Eof _ -> Error "eof"
+      | `Ok ->
+        log "<<%d %s" player.id (String.strip buf);
+        Ok ( Yojson.Basic.from_string buf )
+      ));
+    ] >>| function
+    | Ok res -> res
+    | Error e -> raise Exit
 ;;
 
 
@@ -468,7 +475,7 @@ let host_game : state_t -> int -> unit Deferred.t =
     log "That's all folks, shutting down.";
     server >>= Tcp.Server.close ~close_existing_connections:true
     >>= fun _ ->
-    Ivar.fill iv_shutdown ();
+    Ivar.fill_if_empty iv_shutdown ();
     return ()
 
   ));
