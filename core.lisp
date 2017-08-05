@@ -305,19 +305,32 @@
     (loop as site across (state-sites state)
        do (when site
 	    (unless (in-network-p state site)
-	      (loop as mine in (strat-network-data-master-network (state-strategy-data state))
-		 as mine-id = (mine-mine-id mine)
-		 as mine-info = (aref (site-mine-paths site) mine-id)
-		 do (let ((score (mine-path-info-score mine-info))
-			  (distance (mine-path-info-distance mine-info)))
-		      (when (and distance
-				 (> (- score distance) best-score))
-			(setf best-score (- score distance)
-			      best-candidate site
-			      best-mine-id mine-id)))))))
+	      (let ((site-score 0)
+		    (solution-exists nil)
+		    (nearest-mine-id nil)
+		    (nearest-mine-distance 100000000))
+		(loop as mine in (strat-network-data-master-network (state-strategy-data state))
+		   as mine-id = (mine-mine-id mine)
+		   as mine-info = (aref (site-mine-paths site) mine-id)
+		   do (let ((score (mine-path-info-score mine-info))
+			    (distance (mine-path-info-distance mine-info)))
+			(when distance
+			  (incf site-score score)
+			  (setf solution-exists t)
+			  (when (< distance nearest-mine-distance)
+			    (setf nearest-mine-id mine-id
+				  nearest-mine-distance distance)))))
+		(when (and solution-exists
+			   (> site-score best-score))
+		  (setf best-score site-score
+			best-candidate site
+			best-mine-id nearest-mine-id))))))
     (if best-candidate
 	(progn
-	  (format t "Moving towards S~d to maximize L~d~%" (site-id best-candidate) best-mine-id)
+	  (format t "Moving towards S~d for expected payout ~d, nearest mine L~d~%"
+		  (site-id best-candidate)
+		  best-score
+		  best-mine-id)
 	  (next-shortest-path-river state best-candidate best-mine-id))
 	(strategy-greedy state))))
 
