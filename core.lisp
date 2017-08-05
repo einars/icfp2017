@@ -316,7 +316,9 @@
 			      best-candidate site
 			      best-mine-id mine-id)))))))
     (if best-candidate
-	(next-shortest-path-river state best-candidate best-mine-id)
+	(progn
+	  (format t "Moving towards S~d to maximize L~d~%" (site-id best-candidate) best-mine-id)
+	  (next-shortest-path-river state best-candidate best-mine-id))
 	(strategy-greedy state))))
 
 (defstruct (strat-network-data (:type list))
@@ -359,13 +361,17 @@
 					  other-mine mine2))))))
 		  (if best-candidate
 		      (progn
-			(push first-mine (strat-network-data-master-network setup))
 			(setf (strat-network-data-next-goal setup) best-candidate)
 			(setf (strat-network-data-goal-mine setup) other-mine)
 			(setf (strat-network-data-origin setup) (mine-mine-id first-mine))
+			(format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
 			(strat-network-advance state))
 		      (progn
-			(setf alt-strategy #'strategy-longest)
+			(format t "Giving up, could not find joinable lambdas~%")
+			(format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
+				(length master-network)
+				(mapcar #'mine-mine-id master-network))
+			(setf (strat-network-data-alt-strategy setup) #'strategy-longest)
 			(strategy-longest state)))))
 	    (let ((best-candidate nil)
 		  (first-mine nil)
@@ -375,6 +381,7 @@
 		 do (loop as mine2 in (state-mines state)
 		       do (unless (eq mine1 mine2)
 			    (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
+			      (format t "Evaluating L~d to L~d: distance ~A~%" (mine-mine-id mine1) (mine-mine-id mine2) (mine-path-info-distance path-info))
 			      (when (and (mine-path-info-distance path-info)
 					 (< (mine-path-info-distance path-info) shortest-path))
 				(setf shortest-path (mine-path-info-distance path-info)
@@ -387,27 +394,32 @@
 		    (setf (strat-network-data-next-goal setup) best-candidate)
 		    (setf (strat-network-data-origin setup) (mine-mine-id first-mine))
 		    (setf (strat-network-data-goal-mine setup) other-mine)
+		    (format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
 		    (strat-network-advance state))
 		  (progn
-		    (setf alt-strategy #'strategy-longest)
+		    (format t "Giving up, could not find joinable lambdas~%")
+		    (format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
+			    (length master-network)
+			    (mapcar #'mine-mine-id master-network))
+		    (setf (strat-network-data-alt-strategy setup) #'strategy-longest)
 		    (strategy-longest state))))))))
 
 (defun strat-network-advance (state)
   (let* ((setup (state-strategy-data state))
 	 (goal (strat-network-data-next-goal setup))
 	 (origin (strat-network-data-origin setup)))
-    (if goal
-	(let ((next-river (next-shortest-path-river state goal origin)))
-	  (unless next-river
-	    (setf (strat-network-data-next-goal setup) nil)
-	    (return-from strat-network-advance (strategy-network state)))
-	  (when (or (eql (site-id goal) (car next-river))
-		    (eql (site-id goal) (cdr next-river)))
-	    (setf (strat-network-data-next-goal setup) nil)
-	    (push (strat-network-data-goal-mine setup)
-		  (strat-network-data-master-network setup)))
-	  next-river)
-	(strategy-network state))))
+    (let ((next-river (next-shortest-path-river state goal origin)))
+      (unless next-river
+	(format t "Could not reach goal L~d, giving up~%" (mine-mine-id (strat-network-data-goal-mine setup)))
+	(setf (strat-network-data-next-goal setup) nil)
+	(return-from strat-network-advance (strategy-network state)))
+      (when (or (eql (site-id goal) (car next-river))
+		(eql (site-id goal) (cdr next-river)))
+	(setf (strat-network-data-next-goal setup) nil)
+	(format t "Reached L~d~%" (mine-mine-id (strat-network-data-goal-mine setup)))
+	(push (strat-network-data-goal-mine setup)
+	      (strat-network-data-master-network setup)))
+      next-river)))
 
 (defun next-shortest-path-river (state site mine-id)
   (when site
