@@ -9,10 +9,14 @@ Test strings:
 *)
 open Async
 
+let log s = ksprintf (fun s -> printf "%s\n%!" s) s
+
+type json = Yojson.Basic.json
+
 type site_t = {
   id: int;
-  x: Yojson.Basic.json;
-  y: Yojson.Basic.json;
+  x: json;
+  y: json;
 }
 
 type river_t = {
@@ -31,6 +35,7 @@ type player_t = {
   mutable last_move: last_move_t;
   mutable handle_r: Reader.t option;
   mutable handle_w: Writer.t option;
+  mutable keepalive: unit Ivar.t option;
 }
 
 
@@ -83,7 +88,7 @@ let take_mines sjs =
 
 
 let load_map file_name = 
-  printf "Loading map %s...\n" file_name;
+  log "Loading map %s..." file_name;
   let mjs = Yojson.Basic.from_file file_name in
   let open Yojson.Basic.Util in
   {
@@ -103,7 +108,7 @@ let map_to_json m =
   ]
 
 let print_map m = 
-  printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
+  log "%s [sites=%d, rivers=%d, mines=%d]" 
     (m.source)
     (List.length m.sites)
     (List.length m.rivers)
@@ -122,6 +127,7 @@ let make_players n_players =
       last_move = Pass;
       handle_r = None;
       handle_w = None;
+      keepalive = None;
     } :: !out
   done;
   List.rev !out
@@ -149,34 +155,50 @@ let err_empty_json = Yojson.Basic.from_string "{}"
 let read_json_line r =
   (* Reader.read_until ~keep_delim:false r (`Pred (fun c -> not (Char.is_digit c)))  *)
   Reader.read_until ~keep_delim:false r (`Pred (fun c -> c = ':'))
-  >>= (function
-  | `Eof -> printf "eof\n%!"; return err_empty_json
-  | `Eof_without_delim s -> printf "eof/no delim\n%!"; return err_empty_json
+  >>= function
+  | `Eof -> log "eof"; return err_empty_json
+  | `Eof_without_delim _ -> log "eof/no delim"; return err_empty_json
   | `Ok len_s ->
-    printf "will read %s bytes\n%!" len_s;
     let len = int_of_string (String.strip len_s) in
     let buf = String.create len in
     Reader.read r buf ~len
     >>| (function
-    | `Eof -> err_empty_json
+    | `Eof -> log "Eof"; err_empty_json
     | `Ok _ ->
-      printf "Read [%s]\n%!" buf;
+      log "Read [%s]" buf;
       Yojson.Basic.from_string buf
     )
-  )
 ;;
 
+let read_from_player p = 
+  log "read_from_player %d/%s" p.id p.name;
+  read_json_line (uw p.handle_r)
+
 let write_json_line w s =
-  let data = sprintf "%d:%s" (String.length s) s in Writer.write w data
+  let data = sprintf "%d:%s\n" (String.length s) s in
+  Writer.write w data;
+  Writer.flushed w
 ;;
 
 
 let send_and_read p some_string =
-  write_json_line (uw p.handle_w) some_string;
-  read_json_line (uw p.handle_r)
+  log "send_and_read to %d/%s %s" p.id p.name some_string;
+  write_json_line (uw p.handle_w) some_string 
+  >>= fun _ ->
+  read_from_player p;
+  (* probably parse futures here *)
+;;
 
 
-
+let await_all threads =
+  let rec needle = function
+  (* | h :: t -> h >>= needle t *)
+  | h :: t -> 
+    Deferred.bind h ~f:(fun _ -> needle t)
+  | [] -> return ()
+  in
+  needle threads
+;;
 
 
 let host_game game = (
@@ -184,7 +206,8 @@ let host_game game = (
   let all_connected = Ivar.create() in
     
 
-  let game_to_json_for_player p =
+  let json_of_game : player_t -> json
+    = fun p ->
     (`Assoc [
       "punter", `Int p.id;
       "punters", `Int (List.length game.players);
@@ -192,8 +215,6 @@ let host_game game = (
     ])
   in
     
-
-
 
   let handshake _addr r w  = 
 
@@ -208,47 +229,53 @@ let host_game game = (
       player.handle_r <- Some r;
       player.handle_w <- Some w;
 
-      printf "Got player %d\n%!" player.id;
+      player.keepalive <- Some (Ivar.create ());
 
-      read_json_line r 
+      log "Connected player %d" player.id;
+
+      read_from_player player
       >>= fun json ->
       let name = Yojson.Basic.Util.member "me" json |> Yojson.Basic.Util.to_string in
-      printf "Got player name %s\n%!" name;
+      log "Player %d is now known as %s" player.id name;
       player.name <- name;
-      (sprintf {|{"you": "%s"}|} name) |> write_json_line w;
+      (sprintf {|{"you": "%s"}|} name) |> write_json_line w 
+      >>= fun _ ->
       if (choose_next_player game = None) then (
-        printf "All players seem to be connected, let's try to notify the master\n%!";
+        log "All players seem to be connected, let's try to notify the master";
         Ivar.fill all_connected true;
       );
-      return ()
+      (Ivar.read (uw player.keepalive))
     )
   in
-
-
 
   let server = Tcp.Server.create
     ~on_handler_error: `Raise
     (Tcp.on_port 5000)
     handshake
   in
-  ignore ( server );
 
-  upon (Ivar.read all_connected) (fun _ -> 
-    printf "Yes, I hear you.\n%!";
+  ignore( upon (Ivar.read all_connected) (fun _ -> 
+    ignore ( Writer.flushed (force Writer.stdout)
+    >>= fun _ ->
+    log "Yes, I hear you.";
 
     (* send setup to everybody *)
 
     let setup_threads = List.map game.players ~f:(fun p ->
-      let setup = game_to_json_for_player p |> Yojson.Basic.to_string in
+      let setup = json_of_game p |> Yojson.Basic.to_string in
       send_and_read p setup
     ) in
-    ()
 
-    (* await_all setup_threads; *)
-    
-    (* assume setup is done *)
+    ignore (
+      await_all setup_threads >>=
+      fun _ -> server >>= Tcp.Server.close ~close_existing_connections:true;
+    );
 
-  );
+    Shutdown.exit 0
+    >>= fun _ ->
+    return 0
+
+  )));
 
 )
 ;;
