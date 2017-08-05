@@ -3,7 +3,6 @@ open Async
 
 
 let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then String.sub ~pos:0 ~len:512 s else s)) s
-let flush_stdout () = Writer.flushed (force Writer.stdout)
 
 module JU = Yojson.Basic.Util
 type json = Yojson.Basic.json
@@ -88,13 +87,31 @@ let load_map file_name =
   }
 ;;
 
-let map_to_json m =
+let map_to_json ?ext:(ext=false) m =
   `Assoc [
     (* tk: "sites" should include the additional parameters as well *)
-    "sites", `List (List.map m.sites ~f:(fun s -> `Assoc [ "id", `Int s.id ]));
-    "rivers", `List (List.map m.rivers ~f:(fun r -> `Assoc [ "source", `Int r.source; "target", `Int r.target ] ));
+    "sites", `List (List.map m.sites ~f:(fun s -> 
+      if ext then `Assoc [
+        "id", `Int s.id;
+        "x", s.x;
+        "y", s.y;
+      ] else `Assoc [
+        "id", `Int s.id;
+      ]));
+    "rivers", `List (List.map m.rivers ~f:(fun r -> 
+      if ext then `Assoc [
+        "source", `Int r.source;
+        "target", `Int r.target;
+        "owner", (if r.owner = None then `Null else `Int (uw r.owner));
+        ]
+      else `Assoc [
+        "source", `Int r.source;
+        "target", `Int r.target;
+      ] )
+    );
     "mines", `List (List.map m.mines ~f:(fun m -> `Int m ));
   ]
+;;
 
 let print_map m = 
   log "%s [sites=%d, rivers=%d, mines=%d]" 
@@ -135,9 +152,6 @@ let new_game map n_players =
 
 let choose_next_player game =
   List.find ~f:(fun e -> e.is_initialized = false) game.players
-
-
-let err_empty_json = Yojson.Basic.from_string "{}"
 
 
 let read_from_player player =
@@ -230,6 +244,10 @@ let json_of_player_moves game =
   `List ( List.map game.players ~f:(fun p -> json_of_move p.last_move) )
 ;;
 
+let json_of_all_moves game =
+  `List ( List.map game.moves ~f:json_of_move )
+;;
+
 let json_of_game : state_t -> player_t -> json
   = fun game p ->
   (`Assoc [
@@ -310,7 +328,7 @@ let build_mine_score_map : map_t -> int -> int Int.Table.t
 
   let rec loop distance = function
   | h::t ->
-    let nodes = neighbour_nodes map h (fun x -> true) in
+    let nodes = neighbour_nodes map h (fun _ -> true) in
     List.iter nodes ~f:(fun node_id ->
       if None <> Hashtbl.find dists node_id then ()
       else (
@@ -396,6 +414,23 @@ let host_game : state_t -> int -> unit Deferred.t =
 
   let iv_all_connected = Ivar.create() in
 
+
+  let log_game () =
+    let gamestate = `Assoc [
+        "file", `String game.map.source;
+        "scores", calculate_scores game |> json_of_scores;
+        "moves", json_of_all_moves game;
+        "map", map_to_json ~ext:true game.map
+      ] in
+    let now = Time.now () in
+    let ts = Time.to_filename_string ~zone:(force Time.Zone.local) now  in
+    let filename = sprintf "logs/%s.json" ts in
+    Yojson.Basic.to_file filename gamestate;
+    return ()
+  in
+
+
+
   let send_scores () =
 
     let final_json = `Assoc [ "stop", `Assoc [
@@ -478,13 +513,13 @@ let host_game : state_t -> int -> unit Deferred.t =
 
     >>= play_loop
     >>= send_scores
+    >>= log_game
     >>= fun _ ->
     log "That's all folks, shutting down.";
     server >>= Tcp.Server.close ~close_existing_connections:true
     >>= fun _ ->
     Ivar.fill_if_empty iv_shutdown ();
     return ()
-
   ));
 
   Ivar.read iv_shutdown
