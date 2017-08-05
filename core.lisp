@@ -264,7 +264,7 @@
 			 (game-send `(("claim" . (("punter" . ,(state-my-id state)) ("source" . ,source-id) ("target" . ,target-id)))) stream))
 		       (game-send `(("pass" . (("punter" . ,(state-my-id state))))) stream))))
 	       (let ((scores (assocr :scores (assocr :stop update))))
-		 (format t "Server scores: ~%~:{Punter ~2d => ~4d~%~}" (mapcar (lambda (score)
+		 (format t "Server scores: ~%~:{Punter ~2d => ~8d~%~}" (mapcar (lambda (score)
 										 (list (assocr :punter score) (assocr :score score)))
 									       scores))
 		 (format t "Our calculated score: ~d~%" (score-networks state))
@@ -297,6 +297,129 @@
 			best-candidate (river-id site neighbor)))))))))
     (format t "Expected delta ~d~%" best-score)
     best-candidate))
+
+(defun strategy-longest (state)
+  (let ((best-candidate nil)
+	(best-score 0)
+	(best-mine-id nil))
+    (loop as site across (state-sites state)
+       do (when site
+	    (unless (in-network-p state site)
+	      (loop as mine in (strat-network-data-master-network (state-strategy-data state))
+		 as mine-id = (mine-mine-id mine)
+		 as mine-info = (aref (site-mine-paths site) mine-id)
+		 do (let ((score (mine-path-info-score mine-info))
+			  (distance (mine-path-info-distance mine-info)))
+		      (when (and distance
+				 (> (- score distance) best-score))
+			(setf best-score (- score distance)
+			      best-candidate site
+			      best-mine-id mine-id)))))))
+    (if best-candidate
+	(next-shortest-path-river state best-candidate best-mine-id)
+	(strategy-greedy state))))
+
+(defstruct (strat-network-data (:type list))
+  master-network
+  next-goal
+  goal-mine
+  origin
+  alt-strategy)
+
+(defun in-network-p (state site)
+  (find-if (lambda (network)
+	     (find site (network-sites network)))
+	   (state-networks state)))
+
+(defun strategy-network (state)
+  (unless (state-strategy-data state)
+    (setf (state-strategy-data state) (make-strat-network-data)))
+  (let* ((setup (state-strategy-data state))
+	 (master-network (strat-network-data-master-network setup))
+	 (alt-strategy (strat-network-data-alt-strategy setup))
+	 (next-goal (strat-network-data-next-goal setup)))
+    (if alt-strategy
+	(funcall alt-strategy state)
+	(if master-network
+	    (if next-goal
+		(strat-network-advance state)
+		(let ((best-candidate nil)
+		      (first-mine nil)
+		      (other-mine nil)
+		      (shortest-path 1000000000))
+		  (loop as mine2 in (state-mines state)
+		     do (unless (find mine2 master-network)
+			  (loop as mine1 in master-network
+			     do (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
+				  (when (and (mine-path-info-distance path-info)
+					     (< (mine-path-info-distance path-info) shortest-path))
+				    (setf shortest-path (mine-path-info-distance path-info)
+					  best-candidate (mine-site mine2)
+					  first-mine mine1
+					  other-mine mine2))))))
+		  (if best-candidate
+		      (progn
+			(push first-mine (strat-network-data-master-network setup))
+			(setf (strat-network-data-next-goal setup) best-candidate)
+			(setf (strat-network-data-goal-mine setup) other-mine)
+			(setf (strat-network-data-origin setup) (mine-mine-id first-mine))
+			(strat-network-advance state))
+		      (progn
+			(setf alt-strategy #'strategy-longest)
+			(strategy-longest state)))))
+	    (let ((best-candidate nil)
+		  (first-mine nil)
+		  (other-mine nil)
+		  (shortest-path 1000000000))
+	      (loop as mine1 in (state-mines state)
+		 do (loop as mine2 in (state-mines state)
+		       do (unless (eq mine1 mine2)
+			    (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
+			      (when (and (mine-path-info-distance path-info)
+					 (< (mine-path-info-distance path-info) shortest-path))
+				(setf shortest-path (mine-path-info-distance path-info)
+				      best-candidate (mine-site mine2)
+				      first-mine mine1
+				      other-mine mine2))))))
+	      (if best-candidate
+		  (progn
+		    (push first-mine (strat-network-data-master-network setup))
+		    (setf (strat-network-data-next-goal setup) best-candidate)
+		    (setf (strat-network-data-origin setup) (mine-mine-id first-mine))
+		    (setf (strat-network-data-goal-mine setup) other-mine)
+		    (strat-network-advance state))
+		  (progn
+		    (setf alt-strategy #'strategy-longest)
+		    (strategy-longest state))))))))
+
+(defun strat-network-advance (state)
+  (let* ((setup (state-strategy-data state))
+	 (goal (strat-network-data-next-goal setup))
+	 (origin (strat-network-data-origin setup)))
+    (if goal
+	(let ((next-river (next-shortest-path-river state goal origin)))
+	  (unless next-river
+	    (setf (strat-network-data-next-goal setup) nil)
+	    (return-from strat-network-advance (strategy-network state)))
+	  (when (or (eql (site-id goal) (car next-river))
+		    (eql (site-id goal) (cdr next-river)))
+	    (setf (strat-network-data-next-goal setup) nil)
+	    (push (strat-network-data-goal-mine setup)
+		  (strat-network-data-master-network setup)))
+	  next-river)
+	(strategy-network state))))
+
+(defun next-shortest-path-river (state site mine-id)
+  (when site
+    (let* ((path-info (site-mine-path-info site mine-id))
+	   (prev-site (mine-path-info-prev-site path-info))
+	   (joined nil))
+      (dolist (network (state-networks state))
+	(when (find prev-site (network-sites network))
+	  (setf joined t)))
+      (if joined
+	  (river-id site prev-site)
+	  (next-shortest-path-river state prev-site mine-id)))))
 
 (defun calc-claim-score (state origin site)
   (let ((score 0)
