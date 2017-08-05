@@ -3,17 +3,11 @@ open Core
 Test strings:
 
 19:{"me":"pipelstock"}
+11:{"ready":0}
 
 
 *)
 open Async
-
-type player_t = {
-  id: int;
-  mutable is_initialized: bool;
-  mutable offline_state: string option;
-  mutable name: string;
-}
 
 type site_t = {
   id: int;
@@ -26,6 +20,20 @@ type river_t = {
   target: int;
   owner: int option
 }
+
+type last_move_t = Pass | Claim of river_t
+
+type player_t = {
+  id: int;
+  mutable is_initialized: bool;
+  mutable offline_state: string option;
+  mutable name: string;
+  mutable last_move: last_move_t;
+  mutable handle_r: Reader.t option;
+  mutable handle_w: Writer.t option;
+}
+
+
 type move_t = {
   player_id: int;
   move: river_t;
@@ -86,6 +94,14 @@ let load_map file_name =
   }
 ;;
 
+let map_to_json m =
+  `Assoc [
+    (* tk: "sites" should include the additional parameters as well *)
+    "sites", `List (List.map m.sites ~f:(fun s -> `Assoc [ "id", `Int s.id ]));
+    "rivers", `List (List.map m.rivers ~f:(fun r -> `Assoc [ "source", `Int r.source; "target", `Int r.target ] ));
+    "mines", `List (List.map m.mines ~f:(fun m -> `Assoc [ "id", `Int m ]));
+  ]
+
 let print_map m = 
   printf "%s [sites=%d, rivers=%d, mines=%d]\n" 
     (m.source)
@@ -103,6 +119,9 @@ let make_players n_players =
       is_initialized = false;
       name = "";
       offline_state = None;
+      last_move = Pass;
+      handle_r = None;
+      handle_w = None;
     } :: !out
   done;
   List.rev !out
@@ -131,17 +150,17 @@ let read_json_line r =
   (* Reader.read_until ~keep_delim:false r (`Pred (fun c -> not (Char.is_digit c)))  *)
   Reader.read_until ~keep_delim:false r (`Pred (fun c -> c = ':'))
   >>= (function
-  | `Eof -> return err_empty_json
-  | `Eof_without_delim whatever -> return err_empty_json
+  | `Eof -> printf "eof\n%!"; return err_empty_json
+  | `Eof_without_delim s -> printf "eof/no delim\n%!"; return err_empty_json
   | `Ok len_s ->
     printf "will read %s bytes\n%!" len_s;
-    let len = int_of_string len_s in
+    let len = int_of_string (String.strip len_s) in
     let buf = String.create len in
     Reader.read r buf ~len
     >>| (function
     | `Eof -> err_empty_json
-    | `Ok len_s ->
-      printf "Read [%s]" buf;
+    | `Ok _ ->
+      printf "Read [%s]\n%!" buf;
       Yojson.Basic.from_string buf
     )
   )
@@ -152,10 +171,29 @@ let write_json_line w s =
 ;;
 
 
+let send_and_read p some_string =
+  write_json_line (uw p.handle_w) some_string;
+  read_json_line (uw p.handle_r)
+
+
+
+
+
 let host_game game = (
 
-  let all_connected_ivar = Ivar.create() in
-  let all_connected = Ivar.read all_connected_ivar in
+  let all_connected = Ivar.create() in
+    
+
+  let game_to_json_for_player p =
+    (`Assoc [
+      "punter", `Int p.id;
+      "punters", `Int (List.length game.players);
+      "map", map_to_json game.map
+    ])
+  in
+    
+
+
 
   let handshake _addr r w  = 
 
@@ -167,6 +205,9 @@ let host_game game = (
     | Some player -> (
 
       player.is_initialized <- true;
+      player.handle_r <- Some r;
+      player.handle_w <- Some w;
+
       printf "Got player %d\n%!" player.id;
 
       read_json_line r 
@@ -177,7 +218,7 @@ let host_game game = (
       (sprintf {|{"you": "%s"}|} name) |> write_json_line w;
       if (choose_next_player game = None) then (
         printf "All players seem to be connected, let's try to notify the master\n%!";
-        Ivar.fill all_connected_ivar true;
+        Ivar.fill all_connected true;
       );
       return ()
     )
@@ -192,8 +233,21 @@ let host_game game = (
   in
   ignore ( server );
 
-  upon (all_connected) (fun x -> 
-    printf "Yes, I hear you.\n%!"
+  upon (Ivar.read all_connected) (fun _ -> 
+    printf "Yes, I hear you.\n%!";
+
+    (* send setup to everybody *)
+
+    let setup_threads = List.map game.players ~f:(fun p ->
+      let setup = game_to_json_for_player p |> Yojson.Basic.to_string in
+      send_and_read p setup
+    ) in
+    ()
+
+    (* await_all setup_threads; *)
+    
+    (* assume setup is done *)
+
   );
 
 )
