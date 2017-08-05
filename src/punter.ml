@@ -157,7 +157,7 @@ let read_from_player player =
       let buf = String.create len in
 
       Deferred.any [
-        (after (sec 5.0) >>| fun _ -> Error "timeout");
+        (after (sec 15.0) >>| fun _ -> Error "timeout");
         (
         Reader.really_read (uw player.handle_r) buf ~len >>| (function
         | `Eof _ -> Error "eof"
