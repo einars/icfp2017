@@ -201,7 +201,8 @@ let await_all threads =
 ;;
 
 
-let host_game game = (
+let host_game : state_t -> int -> unit Deferred.t =
+  fun game port ->
 
   let all_connected = Ivar.create() in
     
@@ -250,11 +251,13 @@ let host_game game = (
 
   let server = Tcp.Server.create
     ~on_handler_error: `Raise
-    (Tcp.on_port 5000)
+    (Tcp.on_port port)
     handshake
   in
 
-  ignore( upon (Ivar.read all_connected) (fun _ -> 
+  let iv_shutdown = Ivar.create () in
+
+  upon (Ivar.read all_connected) (fun _ -> 
     ignore ( Writer.flushed (force Writer.stdout)
     >>= fun _ ->
     log "Yes, I hear you.";
@@ -266,17 +269,16 @@ let host_game game = (
       send_and_read p setup
     ) in
 
-    ignore (
-      await_all setup_threads >>=
-      fun _ -> server >>= Tcp.Server.close ~close_existing_connections:true;
-    );
-
-    Shutdown.exit 0
+    await_all setup_threads
     >>= fun _ ->
-    return 0
+    server >>= Tcp.Server.close ~close_existing_connections:true
+    >>= fun _ ->
+    Ivar.fill iv_shutdown ();
+    return ()
 
-  )));
+  ));
 
-)
+  Ivar.read iv_shutdown
+
 ;;
 
