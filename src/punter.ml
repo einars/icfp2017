@@ -9,8 +9,10 @@ Test strings:
 *)
 open Async
 
+
 let log s = ksprintf (fun s -> printf "%s\n%!" s) s
 
+module JU = Yojson.Basic.Util
 type json = Yojson.Basic.json
 
 type site_t = {
@@ -25,24 +27,19 @@ type river_t = {
   owner: int option
 }
 
-type last_move_t = Pass | Claim of river_t
+type move_t = Pass | Claim of river_t
 
 type player_t = {
   id: int;
   mutable is_initialized: bool;
   mutable offline_state: string option;
   mutable name: string;
-  mutable last_move: last_move_t;
+  mutable last_move: move_t;
   mutable handle_r: Reader.t option;
   mutable handle_w: Writer.t option;
   mutable keepalive: unit Ivar.t option;
 }
 
-
-type move_t = {
-  player_id: int;
-  move: river_t;
-}
 
 type map_t = {
   source: string;
@@ -54,14 +51,14 @@ type map_t = {
 
 type state_t = {
   players: player_t list;
-  moves: move_t list;
+  mutable moves: (int * move_t) list;
   map: map_t;
 }
 
-let json_whatever = Yojson.Basic.Util.member
+let json_whatever = JU.member
 
 let take_sites sjs =
-  let open Yojson.Basic.Util in
+  let open JU in
   List.map sjs ~f:(fun elem ->
     let id = member "id" elem |> to_int in
     let x = json_whatever "x" elem in
@@ -71,7 +68,7 @@ let take_sites sjs =
 ;;
 
 let take_rivers sjs =
-  let open Yojson.Basic.Util in
+  let open JU in
   List.map sjs ~f:(fun elem ->
     let source = member "source" elem |> to_int in
     let target  = member "target" elem |> to_int in
@@ -83,19 +80,18 @@ let take_rivers sjs =
 ;;
 
 let take_mines sjs =
-  List.map sjs ~f:Yojson.Basic.Util.to_int
+  List.map sjs ~f:JU.to_int
 ;;
 
 
 let load_map file_name = 
   log "Loading map %s..." file_name;
   let mjs = Yojson.Basic.from_file file_name in
-  let open Yojson.Basic.Util in
   {
     source = file_name;
-    sites = mjs |> member "sites" |> to_list |> take_sites;
-    rivers = mjs |> member "rivers" |> to_list |> take_rivers;
-    mines = mjs |> member "mines" |> to_list |> take_mines;
+    sites = mjs |> JU.member "sites" |> JU.to_list |> take_sites;
+    rivers = mjs |> JU.member "rivers" |> JU.to_list |> take_rivers;
+    mines = mjs |> JU.member "mines" |> JU.to_list |> take_mines;
   }
 ;;
 
@@ -144,46 +140,65 @@ let new_game map n_players =
 
 
 
-
-
 let choose_next_player game =
   List.find ~f:(fun e -> e.is_initialized = false) game.players
 
 
 let err_empty_json = Yojson.Basic.from_string "{}"
 
-let read_json_line r =
+
+let read_from_player player =
   (* Reader.read_until ~keep_delim:false r (`Pred (fun c -> not (Char.is_digit c)))  *)
-  Reader.read_until ~keep_delim:false r (`Pred (fun c -> c = ':'))
+  Reader.read_until ~keep_delim:false (uw player.handle_r) (`Pred (fun c -> c = ':'))
   >>= function
-  | `Eof -> log "eof"; return err_empty_json
-  | `Eof_without_delim _ -> log "eof/no delim"; return err_empty_json
+  | `Eof -> log "<< eof"; return err_empty_json
+  | `Eof_without_delim _ -> log "<< eof/no delim"; return err_empty_json
   | `Ok len_s ->
     let len = int_of_string (String.strip len_s) in
     let buf = String.create len in
-    Reader.read r buf ~len
+    Reader.read (uw player.handle_r) buf ~len
     >>| (function
-    | `Eof -> log "Eof"; err_empty_json
+    | `Eof -> log "<< Eof"; err_empty_json
     | `Ok _ ->
-      log "Read [%s]" buf;
+      log "<<%d %s" player.id buf;
       Yojson.Basic.from_string buf
     )
 ;;
 
-let read_from_player p = 
-  log "read_from_player %d/%s" p.id p.name;
-  read_json_line (uw p.handle_r)
 
-let write_json_line w s =
-  let data = sprintf "%d:%s\n" (String.length s) s in
-  Writer.write w data;
-  Writer.flushed w
+let write_to_player : player_t -> json -> unit Deferred.t
+= fun p data ->
+  let s = Yojson.Basic.to_string data in
+  let data = sprintf "%d:%s\n" (1 + String.length s) s in
+  log ">>%d %s" p.id s;
+  Writer.write (uw p.handle_w) data;
+  Writer.flushed (uw p.handle_w)
 ;;
 
 
-let send_and_read p some_string =
-  log "send_and_read to %d/%s %s" p.id p.name some_string;
-  write_json_line (uw p.handle_w) some_string 
+let decode_player_command : player_t -> json -> move_t
+= fun p data ->
+  let command = ref Pass in
+  (match data with
+  | `Assoc pts ->
+    List.iter pts ~f:(fun (k,v) ->
+      if (k = "claim")
+      then command := Claim {
+        source = JU.member "source" v |> JU.to_int;
+        target = JU.member "target" v |> JU.to_int;
+        owner = None;
+      }
+      else if (k = "pass") then command := Pass
+    );
+  | _ -> log "Some crap received, using pass"
+  );
+  !command
+;;
+
+
+let send_and_read : player_t -> json -> json Deferred.t
+= fun p data ->
+  write_to_player p data 
   >>= fun _ ->
   read_from_player p;
   (* probably parse futures here *)
@@ -200,23 +215,64 @@ let await_all threads =
   needle threads
 ;;
 
+let json_of_move player_id = function
+  | Pass -> `Assoc [ "pass", `Assoc [ "punter", `Int player_id]]
+  | Claim river -> `Assoc [ "claim", `Assoc [ "punter", `Int player_id; "source", `Int river.source; "target", `Int river.target ]]
+;;
+
+let json_of_player_moves game =
+  `List ( List.map game.players ~f:(fun p -> json_of_move p.id p.last_move) )
+;;
+
+let json_of_game : state_t -> player_t -> json
+  = fun game p ->
+  (`Assoc [
+    "punter", `Int p.id;
+    "punters", `Int (List.length game.players);
+    "map", map_to_json game.map
+  ])
+;;
+  
+
+let for_all_players game get_data process_response =
+  let rec loop = function
+    | [] -> return ()
+    | p :: ps ->
+      write_to_player p (get_data p)
+      >>= fun _ -> read_from_player p
+      >>= fun resp -> process_response p resp
+      >>= fun _ -> loop ps
+  in
+  loop game.players
+;;
 
 let host_game : state_t -> int -> unit Deferred.t =
   fun game port ->
 
   let all_connected = Ivar.create() in
-    
 
-  let json_of_game : player_t -> json
-    = fun p ->
-    (`Assoc [
-      "punter", `Int p.id;
-      "punters", `Int (List.length game.players);
-      "map", map_to_json game.map
-    ])
+  let play_loop () =
+
+    for_all_players game
+      (fun p -> `Assoc [ "move", `Assoc [ "moves", json_of_player_moves game ]])
+      (fun p resp ->
+        let cmd = decode_player_command p resp  in
+        match cmd with
+        | Pass -> 
+          p.last_move <- cmd;
+          game.moves <- (p.id, cmd) :: game.moves;
+          return ()
+        | Claim coords ->
+          p.last_move <- cmd;
+          game.moves <- (p.id, cmd) :: game.moves;
+          return ()
+          (* TKTK: check, apply *)
+      )
   in
-    
 
+
+
+    
   let handshake _addr r w  = 
 
     match choose_next_player game with
@@ -235,11 +291,11 @@ let host_game : state_t -> int -> unit Deferred.t =
       log "Connected player %d" player.id;
 
       read_from_player player
-      >>= fun json ->
-      let name = Yojson.Basic.Util.member "me" json |> Yojson.Basic.Util.to_string in
+      >>= fun data ->
+      let name = JU.member "me" data |> JU.to_string in
       log "Player %d is now known as %s" player.id name;
       player.name <- name;
-      (sprintf {|{"you": "%s"}|} name) |> write_json_line w 
+      `Assoc [ "you", `String name ] |> write_to_player player
       >>= fun _ ->
       if (choose_next_player game = None) then (
         log "All players seem to be connected, let's try to notify the master";
@@ -265,11 +321,15 @@ let host_game : state_t -> int -> unit Deferred.t =
     (* send setup to everybody *)
 
     let setup_threads = List.map game.players ~f:(fun p ->
-      let setup = json_of_game p |> Yojson.Basic.to_string in
+      let setup = json_of_game game p in
       send_and_read p setup
     ) in
 
     await_all setup_threads
+    >>= fun _ ->
+
+    play_loop () 
+
     >>= fun _ ->
     server >>= Tcp.Server.close ~close_existing_connections:true
     >>= fun _ ->
