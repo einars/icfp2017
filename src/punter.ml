@@ -104,7 +104,7 @@ let map_to_json m =
     (* tk: "sites" should include the additional parameters as well *)
     "sites", `List (List.map m.sites ~f:(fun s -> `Assoc [ "id", `Int s.id ]));
     "rivers", `List (List.map m.rivers ~f:(fun r -> `Assoc [ "source", `Int r.source; "target", `Int r.target ] ));
-    "mines", `List (List.map m.mines ~f:(fun m -> `Assoc [ "id", `Int m ]));
+    "mines", `List (List.map m.mines ~f:(fun m -> `Int m ));
   ]
 
 let print_map m = 
