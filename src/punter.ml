@@ -1,12 +1,4 @@
 open Core
-(*
-Test strings:
-
-19:{"me":"pipelstock"}
-11:{"ready":0}
-
-
-*)
 open Async
 
 
@@ -24,10 +16,10 @@ type site_t = {
 type river_t = {
   source: int;
   target: int;
-  owner: int option
+  mutable owner: int option
 }
 
-type move_t = Pass | Claim of river_t
+type move_t = Pass of int | Claim of int * river_t
 
 type player_t = {
   id: int;
@@ -37,7 +29,7 @@ type player_t = {
   mutable last_move: move_t;
   mutable handle_r: Reader.t option;
   mutable handle_w: Writer.t option;
-  mutable keepalive: unit Ivar.t option;
+  iv_keepalive: unit Ivar.t; (* ivar to signal that connection may be terminated *)
 }
 
 
@@ -51,7 +43,7 @@ type map_t = {
 
 type state_t = {
   players: player_t list;
-  mutable moves: (int * move_t) list;
+  mutable moves: move_t list;
   map: map_t;
 }
 
@@ -120,10 +112,10 @@ let make_players n_players =
       is_initialized = false;
       name = "";
       offline_state = None;
-      last_move = Pass;
+      last_move = Pass i;
       handle_r = None;
       handle_w = None;
-      keepalive = None;
+      iv_keepalive = Ivar.create ();
     } :: !out
   done;
   List.rev !out
@@ -160,7 +152,7 @@ let read_from_player player =
     >>| (function
     | `Eof -> log "<< Eof"; err_empty_json
     | `Ok _ ->
-      log "<<%d %s" player.id buf;
+      log "<<%d %s" player.id (String.strip buf);
       Yojson.Basic.from_string buf
     )
 ;;
@@ -170,7 +162,7 @@ let write_to_player : player_t -> json -> unit Deferred.t
 = fun p data ->
   let s = Yojson.Basic.to_string data in
   let data = sprintf "%d:%s\n" (1 + String.length s) s in
-  log ">>%d %s" p.id s;
+  log "%d>> %s" p.id s;
   Writer.write (uw p.handle_w) data;
   Writer.flushed (uw p.handle_w)
 ;;
@@ -178,17 +170,17 @@ let write_to_player : player_t -> json -> unit Deferred.t
 
 let decode_player_command : player_t -> json -> move_t
 = fun p data ->
-  let command = ref Pass in
+  let command = ref (Pass p.id) in
   (match data with
   | `Assoc pts ->
     List.iter pts ~f:(fun (k,v) ->
       if (k = "claim")
-      then command := Claim {
+      then command := Claim (p.id, {
         source = JU.member "source" v |> JU.to_int;
         target = JU.member "target" v |> JU.to_int;
         owner = None;
-      }
-      else if (k = "pass") then command := Pass
+      })
+      else if (k = "pass") then command := Pass p.id
     );
   | _ -> log "Some crap received, using pass"
   );
@@ -215,13 +207,13 @@ let await_all threads =
   needle threads
 ;;
 
-let json_of_move player_id = function
-  | Pass -> `Assoc [ "pass", `Assoc [ "punter", `Int player_id]]
-  | Claim river -> `Assoc [ "claim", `Assoc [ "punter", `Int player_id; "source", `Int river.source; "target", `Int river.target ]]
+let json_of_move = function
+  | Pass id -> `Assoc [ "pass", `Assoc [ "punter", `Int id]]
+  | Claim (id, river) -> `Assoc [ "claim", `Assoc [ "punter", `Int id; "source", `Int river.source; "target", `Int river.target ]]
 ;;
 
 let json_of_player_moves game =
-  `List ( List.map game.players ~f:(fun p -> json_of_move p.id p.last_move) )
+  `List ( List.map game.players ~f:(fun p -> json_of_move p.last_move) )
 ;;
 
 let json_of_game : state_t -> player_t -> json
@@ -234,39 +226,105 @@ let json_of_game : state_t -> player_t -> json
 ;;
   
 
-let for_all_players game get_data process_response =
+let push_to_all_players game data =
+
   let rec loop = function
     | [] -> return ()
     | p :: ps ->
-      write_to_player p (get_data p)
-      >>= fun _ -> read_from_player p
-      >>= fun resp -> process_response p resp
+      write_to_player p data
       >>= fun _ -> loop ps
   in
   loop game.players
 ;;
 
+let do_moves_for_all_players game get_data process_response =
+
+  let n_moves = ref (List.length game.map.sites) in
+
+  let rec loop = function
+    | [] -> loop game.players
+    | p :: ps ->
+      n_moves := !n_moves - 1;
+      if (!n_moves = 0) then return ()
+      else (
+        write_to_player p (get_data p)
+        >>= fun _ -> read_from_player p
+        >>= fun resp -> process_response p resp
+        >>= fun _ -> loop ps
+      )
+  in
+  loop game.players
+;;
+
+let claim : state_t -> player_t -> river_t -> bool
+= fun game player river ->
+  let elem = List.find game.map.rivers ~f:(
+    fun r -> (r.source = river.source && r.target = river.target) || (r.source = river.target && r.target = river.source)
+  ) in
+  (match elem with
+  | None ->
+    log "No such river";
+    false
+  | Some elem ->
+    if elem.owner = None then (
+      elem.owner <- Some player.id;
+      true
+    ) else (
+      log "Already claimed by %d" (uw elem.owner);
+      false
+    )
+  )
+;;
+    
+
+let calculate_scores game =
+  List.map game.players ~f:(fun p -> p.id, p.name, 0)
+;;
+
+let json_of_scores scores =
+  `List (List.map scores ~f:(fun (id, name, score) -> `Assoc [
+    "punter", `Int id;
+    "name", `String name;
+    "score", `Int score;
+  ]))
+;;
+  
+
 let host_game : state_t -> int -> unit Deferred.t =
   fun game port ->
 
-  let all_connected = Ivar.create() in
+  let iv_all_connected = Ivar.create() in
+
+  let send_scores () =
+
+    let final_json = `Assoc [ "stop", `Assoc [
+        "moves", json_of_player_moves game;
+        "scores", calculate_scores game |> json_of_scores;
+      ]] in
+    push_to_all_players game final_json
+
+  in
 
   let play_loop () =
 
-    for_all_players game
-      (fun p -> `Assoc [ "move", `Assoc [ "moves", json_of_player_moves game ]])
+    do_moves_for_all_players game
+      (fun _ -> `Assoc [ "move", `Assoc [ "moves", json_of_player_moves game ]])
       (fun p resp ->
         let cmd = decode_player_command p resp  in
         match cmd with
-        | Pass -> 
+        | Pass _ -> 
           p.last_move <- cmd;
-          game.moves <- (p.id, cmd) :: game.moves;
+          game.moves <- cmd :: game.moves;
           return ()
-        | Claim coords ->
-          p.last_move <- cmd;
-          game.moves <- (p.id, cmd) :: game.moves;
+        | Claim (_, coords) ->
+          if (claim game p coords) then (
+            p.last_move <- cmd;
+          ) else (
+            log "Claim failed";
+            p.last_move <- Pass p.id;
+          );
+          game.moves <- p.last_move :: game.moves;
           return ()
-          (* TKTK: check, apply *)
       )
   in
 
@@ -286,8 +344,6 @@ let host_game : state_t -> int -> unit Deferred.t =
       player.handle_r <- Some r;
       player.handle_w <- Some w;
 
-      player.keepalive <- Some (Ivar.create ());
-
       log "Connected player %d" player.id;
 
       read_from_player player
@@ -297,13 +353,12 @@ let host_game : state_t -> int -> unit Deferred.t =
       player.name <- name;
       `Assoc [ "you", `String name ] |> write_to_player player
       >>= fun _ ->
-      if (choose_next_player game = None) then (
-        log "All players seem to be connected, let's try to notify the master";
-        Ivar.fill all_connected true;
-      );
-      (Ivar.read (uw player.keepalive))
+      if (choose_next_player game = None) then Ivar.fill iv_all_connected true;
+      Ivar.read player.iv_keepalive;
     )
   in
+
+  let iv_shutdown = Ivar.create () in
 
   let server = Tcp.Server.create
     ~on_handler_error: `Raise
@@ -311,26 +366,19 @@ let host_game : state_t -> int -> unit Deferred.t =
     handshake
   in
 
-  let iv_shutdown = Ivar.create () in
-
-  upon (Ivar.read all_connected) (fun _ -> 
-    ignore ( Writer.flushed (force Writer.stdout)
+  upon (Ivar.read iv_all_connected) (fun _ -> ignore (
+    Writer.flushed (force Writer.stdout)
     >>= fun _ ->
-    log "Yes, I hear you.";
-
-    (* send setup to everybody *)
-
-    let setup_threads = List.map game.players ~f:(fun p ->
+    log "All players connected, starting game loop";
+    List.map game.players ~f:(fun p ->
       let setup = json_of_game game p in
       send_and_read p setup
-    ) in
+    ) |> await_all
 
-    await_all setup_threads
+    >>= play_loop
+    >>= send_scores
     >>= fun _ ->
-
-    play_loop () 
-
-    >>= fun _ ->
+    log "That's all folks, shutting down.";
     server >>= Tcp.Server.close ~close_existing_connections:true
     >>= fun _ ->
     Ivar.fill iv_shutdown ();
