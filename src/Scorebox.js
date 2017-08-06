@@ -44,9 +44,6 @@ class Scorebox extends PureComponent {
         }
       })
 
-      console.log(`Thinned list from ${ls.length} to ${out.length}`)
-      console.log(`Increase: ${increase}`)
-
       return out
 
     }
@@ -73,7 +70,7 @@ class Scorebox extends PureComponent {
         if ( ! out[idx + 1]) {
           out[idx + 1] = {step: m[0] + 1}
         }
-        if (out[idx + 1]['step'] !== m[0]) console.log('thinned data warning, there are bugs')
+        if (out[idx + 1]['step'] !== m[0] + 1) console.log('thinned data warning, there are bugs')
         out[idx + 1][`p${player_id}`] = m[1]
       })
     })

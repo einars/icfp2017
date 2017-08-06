@@ -15,13 +15,14 @@ class Mapinfo extends Component {
 
     return (
       <div>
-        Frame: {this.props.frame} of {this.props.game.moves.length}<br />
-        Move: {move}<br />
         Game: {g.id}<br />
         File: {g.file}<br />
         Sites: {g.map.sites.length}<br/ >
         Rivers: {g.map.rivers.length} <br />
         Mines: {g.map.mines.length}<br />
+        <br />
+        Frame: {this.props.frame} of {this.props.game.moves.length}<br />
+        Move: {move}<br />
       </div>
     )
   }
