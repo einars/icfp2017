@@ -3,7 +3,9 @@
 
 (in-package :punter/core)
 
-(defparameter *online-game* nil)
+(defparameter *offline-game* nil)
+
+(defvar *moves*)
 
 (defstruct (state (:type list)
 		  (:constructor make-state-1))
@@ -12,6 +14,7 @@
   sites
   networks
   strategy-data
+  strategy-data-2
   my-id
   n-punters)
 
@@ -48,6 +51,13 @@
   site-ids
   sites
   mines)
+
+(defun clone-state (state)
+  (let ((*print-circle* t)
+	(*print-readably* t))
+    (read-from-string
+     (with-output-to-string (out)
+       (prin1 state out)))))
 
 (defun assocr (item alist)
   (cdr (assoc item alist)))
@@ -179,15 +189,18 @@
 	  (site-neighbors site))
   reacheable-neighbors)
 
+(defun touched-networks (state river-id)
+  (mapcan (lambda (network)
+	    (when (or (find (car river-id) (network-site-ids network))
+		      (find (cdr river-id) (network-site-ids network)))
+	      (list network)))
+	  (state-networks state)))
+
 (defun claim-river (state source-id target-id)
   (let* ((source (aref (state-sites state) source-id))
 	 (target (aref (state-sites state) target-id))
 	 (river-id (river-id source target))
-	 (touched-networks (mapcan (lambda (network)
-				     (when (or (find source-id (network-site-ids network))
-					       (find target-id (network-site-ids network)))
-				       (list network)))
-				   (state-networks state))))
+	 (touched-networks (touched-networks state river-id)))
     (removef (state-rivers state) river-id :test #'equalp)
     (if touched-networks
 	(if (second touched-networks)
@@ -220,7 +233,7 @@
     (setf (state-my-id state) (assocr :punter game-setup)
 	  (state-n-punters state) (assocr :punters game-setup))
     (let ((data `(("ready" . ,(state-my-id state)))))
-      (when *online-game*
+      (when *offline-game*
 	(push (cons "state" (let ((*print-readably* t)
 				  (*print-circle* t))
 			      (format nil "~A" state)))
@@ -228,14 +241,14 @@
       (game-send data stream))
     state))
 
-(defun play-game (server port strategy)
+(defun play-game (server port strategy &key (name "zebiekste"))
   (when-let ((socket (socket-connect server port)))
     (let ((stream (socket-stream socket))
 	  (state nil))
-      (game-send '(("me" . "zebiekste")) stream)
+      (game-send `(("me" . ,name)) stream)
       (when (wait-for-input socket :timeout 5)
 	(let ((response (game-decode (read-line stream))))
-	  (unless (equalp (assocr :you response) "zebiekste")
+	  (unless (equalp (assocr :you response) name)
 	    (error "bad handshake; returned ~A" response))))
       (when (or (listen stream)
 		(wait-for-input socket))
@@ -246,21 +259,15 @@
       (loop
 	 (when (wait-for-input socket :timeout 30)
 	   (let ((update (game-decode (read-line stream))))
-	     (if-let ((moves (assocr :moves (assocr :move update))))
+	     (if-let ((*moves* (assocr :moves (assocr :move update))))
 	       (progn
-		 (dolist (move moves)
-		   (when-let ((claim (assocr :claim move)))
-		     (let ((source-id (assocr :source claim))
-			   (target-id (assocr :target claim))
-			   (punter-id (assocr :punter claim)))
-		       (unless (eql punter-id (state-my-id state))
-			 (remove-river state source-id target-id)))))
+		 (apply-moves state *moves*)
 		 (let* ((river (funcall strategy state))
 			(source-id (car river))
 			(target-id (cdr river)))
 		   (if river
 		       (progn
-			 (claim-river state source-id target-id)
+			 #+nil(claim-river state source-id target-id)
 			 (game-send `(("claim" . (("punter" . ,(state-my-id state)) ("source" . ,source-id) ("target" . ,target-id)))) stream))
 		       (game-send `(("pass" . (("punter" . ,(state-my-id state))))) stream))))
 	       (let ((scores (assocr :scores (assocr :stop update))))
@@ -271,6 +278,16 @@
 		 #+nil(print-state state)
 		 (return)))))))
     (socket-close socket)))
+
+(defun apply-moves (state moves)
+  (dolist (move moves)
+    (when-let ((claim (assocr :claim move)))
+      (let ((source-id (assocr :source claim))
+	    (target-id (assocr :target claim))
+	    (punter-id (assocr :punter claim)))
+	(if (eql punter-id (state-my-id state))
+	    (claim-river state source-id target-id)
+	    (remove-river state source-id target-id))))))
 
 (defun strategy-pass (state)
   (declare (ignore state))
@@ -333,6 +350,39 @@
 		  best-mine-id)
 	  (next-shortest-path-river state best-candidate best-mine-id))
 	(strategy-greedy state))))
+
+(defstruct (strat-evil-state (:type list))
+  opponents)
+
+(defstruct (opponent (:type list))
+  id
+  state)
+
+(defun strategy-evil (state)
+  (unless (state-strategy-data-2 state)
+    (let ((setup (make-strat-evil-state))
+	  (my-id (state-my-id state))
+	  (opponents nil))
+      (dotimes (i (state-n-punters state))
+	(if (eql i my-id)
+	    (push nil opponents)
+	    (let ((opponent (make-opponent :id i :state (clone-state state))))
+	      (push opponent opponents)
+	      (setf (state-my-id (opponent-state opponent)) i))))
+      (setf (strat-evil-state-opponents setup) (nreverse opponents))
+      (setf (state-strategy-data-2 state) setup)))
+  (let ((setup (state-strategy-data-2 state)))
+    (dolist (opponent (strat-evil-state-opponents setup))
+      (when opponent
+	(apply-moves (opponent-state opponent) *moves*)))
+    (dolist (opponent (strat-evil-state-opponents setup))
+      (when opponent
+	(let* ((opp-state (opponent-state opponent))
+	       (best-river (strategy-greedy opp-state)))
+	  (when (cdr (touched-networks opp-state best-river))
+	    (format t "Performing DICK-MOVE on P~d~%" (opponent-id opponent))
+	    (return-from strategy-evil best-river))))))
+  (strategy-network state))
 
 (defstruct (strat-network-data (:type list))
   master-network
