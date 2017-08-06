@@ -52,9 +52,18 @@ class Scorebox extends PureComponent {
 
   render () {
 
-    if ( ! this.props.game.scores || ! this.props.game.scores.length) return null;
-
     const g = this.props.game
+
+    if ( ! g.scores || ! g.scores.length) return null
+
+
+    if (g.moves.length > 1200) return (
+        <div className="scorebox">
+        <p className="text-muted">Scorebox disabled, too many nodes</p>
+        </div>
+    )
+
+
     const players = g.scores.map(p => p.punter)
 
     const getStroke = (p) => {
