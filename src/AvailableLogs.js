@@ -2,13 +2,24 @@ import React, { Component } from 'react'
 import { connect } from 'react-redux'
 import { bindActionCreators } from 'redux'
 
-import { requestGame } from './actions'
+import { requestGame, requestGames } from './actions'
 
 class AvailableLogs extends Component {
+
+  constructor (props) {
+    super(props)
+
+    this.refresh = this.refresh.bind(this)
+  }
+
+  refresh () {
+    this.props.actions.requestGames();
+  }
 
   render () {
     return (
       <div>
+        <button type="button" onClick={this.refresh} className="btn btn-default pull-right"><span className="fa fa-refresh" />refresh</button>
         <h2>Available logs</h2>
         <div className="scrollpane">
         <table className="table table-condensed"><tbody>
@@ -52,7 +63,7 @@ const mapStateToProps = (state, ownProps) => {
 
 const mapDispatchToProps = function (dispatch) {
   return {
-    actions: bindActionCreators({requestGame}, dispatch)
+    actions: bindActionCreators({requestGame, requestGames}, dispatch)
   }
 }
 
