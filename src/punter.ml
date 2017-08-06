@@ -30,7 +30,7 @@ let map_to_json ?ext:(ext=false) m =
         "target", `Int r.target;
       ] )
     );
-    "mines", `List (List.map m.mines ~f:(fun m -> `Int m ));
+    "mines", `List (List.map m.mines ~f:(fun m -> `Int m.id ));
   ]
 ;;
 

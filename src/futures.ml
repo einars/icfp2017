@@ -44,7 +44,33 @@ let augment_setup_message : json -> json
 ;;
     
 
-let score _ _ = 0
+
+
+let score game player =
+
+  List.fold_left player.futures ~init:0 ~f:(fun accum future ->
+
+    let mine = Game.find_mine game.map.mines future.source in
+    let score = Hashtbl.find_exn mine.distances future.target in
+    if Game.has_path_between_nodes game player future.source future.target
+    then (
+      log "Future succ %d/%s: score adj %d^3 for %d->%d"
+        player.id player.name
+        score
+        future.source future.target;
+      accum + score * score * score
+    ) else (
+      log "Future fail %d/%s: score adj -%d^3 for %d->%d"
+        player.id player.name
+        score
+        future.source future.target;
+      accum - score * score * score
+    )
+  )
+
+;;
+
+
 
 
 let augment_player game player json =

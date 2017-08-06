@@ -8,8 +8,21 @@ let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then 
 
 let is_mine : map_t -> int -> bool
 = fun map mine ->
-  None <> List.find map.mines ~f:(fun m -> m = mine)
+  None <> List.find map.mines ~f:(fun m -> m.id = mine)
 ;;
+
+
+let find_site : site_t list -> int -> site_t
+= fun sites id ->
+  List.find sites ~f:(fun s -> s.id = id) |> uw
+;;
+
+let find_mine : mine_t list -> int -> mine_t
+= fun mines id ->
+  List.find mines ~f:(fun s -> s.id = id) |> uw
+;;
+
+
 
 let neighbour_nodes (rivers:river_t list) node =
   List.filter rivers ~f:(fun r -> r.source = node || r.target = node)
@@ -40,8 +53,47 @@ let take_rivers sjs =
   )
 ;;
 
-let take_mines sjs =
-  List.map sjs ~f:JU.to_int
+
+
+let mine_distance_map ~sites node_id =
+
+  let dists = Int.Table.create () in
+  let queue = ref [] in
+
+  let rec loop distance = function
+  | h::t ->
+    let node = find_site sites h in
+    List.iter node.neighbors ~f:(fun (node_id, river) ->
+      if None = Hashtbl.find dists node_id then (
+        queue := node_id :: !queue;
+        Hashtbl.set dists ~key:node_id ~data:distance
+      );
+    );
+    loop distance t
+  | [] -> 
+    if !queue <> [] then (
+      let nq = !queue in
+      queue := [];
+      loop (distance + 1) nq;
+    )
+  in
+
+  Hashtbl.set dists ~key:node_id ~data:0;
+  loop 1 [node_id];
+  dists
+;;
+
+
+
+
+let take_mines ~sites sjs =
+  List.map sjs ~f:(fun m -> 
+    let id = JU.to_int m in
+    {
+      id;
+      distances = mine_distance_map ~sites id
+    }
+  )
 ;;
 
 
@@ -49,11 +101,12 @@ let load_map source =
   log "Loading map %s..." source;
   let mjs = Yojson.Basic.from_file source in
   let rivers = mjs |> JU.member "rivers" |> JU.to_list |> take_rivers in
+  let sites = mjs |> JU.member "sites" |> JU.to_list |> take_sites ~rivers in
   {
     source;
     rivers;
-    sites = mjs |> JU.member "sites" |> JU.to_list |> take_sites ~rivers;
-    mines = mjs |> JU.member "mines" |> JU.to_list |> take_mines;
+    sites;
+    mines = mjs |> JU.member "mines" |> JU.to_list |> take_mines ~sites;
   }
 ;;
 
@@ -98,39 +151,38 @@ let print_map m =
 ;;
 
 
-let find_site : map_t -> int -> site_t
-= fun map id ->
-  List.find map.sites ~f:(fun s -> s.id = id) |> uw
-;;
-
-let build_mine_score_map : map_t -> int -> int Int.Table.t
-= fun map node_id ->
-
-  let dists = Int.Table.create () in
+let has_path_between_nodes : game_t -> player_t -> int -> int -> bool
+= fun game player n1 n2 ->
+  let seen = ref Int.Set.empty in
   let queue = ref [] in
 
-  let rec loop distance = function
+  let is_seen_node n = Set.mem !seen n in
+
+  let nodes_belonging_to_player_out_of node_id =
+    let node = find_site game.map.sites node_id in
+    List.filter node.neighbors ~f:( fun (node_id, river) -> river.owner <> None && uw river.owner = player.id)
+    |> List.map ~f:fst
+  in
+  let rec loop = function
   | h::t ->
-    let node = find_site map h in
-    List.iter node.neighbors ~f:(fun (node_id,node) ->
-      if None <> Hashtbl.find dists node_id then ()
-      else (
+    nodes_belonging_to_player_out_of h
+    |> List.iter ~f:(fun node_id ->
+      if not (is_seen_node node_id) then (
+        seen := Set.add !seen node_id;
         queue := node_id :: !queue;
-        Hashtbl.set dists ~key:node_id ~data:distance
       );
     );
-    loop distance t
+    loop t
   | [] -> 
     if !queue <> [] then (
       let nq = !queue in
       queue := [];
-      loop (distance + 1) nq;
+      loop nq;
     )
   in
 
-  Hashtbl.set dists ~key:node_id ~data:0;
-  loop 1 [node_id];
-  dists
+  loop [n1];
+  Set.mem !seen n2
 ;;
 
 
@@ -138,16 +190,15 @@ let build_mine_score_map : map_t -> int -> int Int.Table.t
 let calculate_mine_score game player mine =
 
   let score = ref 0 in
-  let seen = ref [] in
+  let seen = ref Int.Set.empty in
   let queue = ref [] in
 
-  let is_seen_node n = List.exists ~f:(fun x -> x = n) !seen
-  in
+  let is_seen_node n = Set.mem !seen n in
 
-  let dist_map = build_mine_score_map game.map mine in
+  let dist_map = mine.distances in
 
   let nodes_belonging_to_player_out_of node_id =
-    let node = find_site game.map node_id in
+    let node = find_site game.map.sites node_id in
     List.filter node.neighbors ~f:( fun (node_id, node) -> node.owner <> None && uw node.owner = player.id)
     |> List.map ~f:fst
   in
@@ -157,7 +208,7 @@ let calculate_mine_score game player mine =
     let nodes = nodes_belonging_to_player_out_of h in
     List.iter nodes ~f:(fun node_id ->
       if not (is_seen_node node_id) then (
-        seen := node_id :: !seen;
+        seen := Set.add !seen node_id;
         queue := node_id :: !queue;
         let distance = Hashtbl.find_exn dist_map node_id in
         score := !score + distance * distance
@@ -173,7 +224,7 @@ let calculate_mine_score game player mine =
     )
   in
 
-  loop [mine]
+  loop [mine.id]
   
 ;;
 

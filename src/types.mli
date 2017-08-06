@@ -1,4 +1,5 @@
 open Async
+open Core
 
 type json = Yojson.Basic.json
 
@@ -18,6 +19,11 @@ type site_t = {
 
 type move_t = Pass of int | Claim of int * river_t
 
+type mine_t = {
+  id: int;
+  distances: int Int.Table.t;
+}
+
 type player_t = {
   id: int;
   mutable is_initialized: bool;
@@ -36,7 +42,7 @@ type map_t = {
   source: string;
   sites: site_t list;
   rivers: river_t list;
-  mines: int list;
+  mines: mine_t list;
 }
 
 
