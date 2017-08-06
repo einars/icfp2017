@@ -10,7 +10,8 @@ class AvailableLogs extends Component {
     return (
       <div>
         <h2>Available logs</h2>
-        <div className="scrollpane">
+        <div className="scrollpane panel panel-default">
+        <div className="panel-body">
         {
           this.props.games.map( g => {
             let classname = "w100 btn-xs btn"
@@ -20,6 +21,7 @@ class AvailableLogs extends Component {
             )
           })
         }
+      </div>
       </div>
       </div>
     )

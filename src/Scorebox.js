@@ -5,7 +5,7 @@ import { bindActionCreators } from 'redux'
 
 import playercolors from './playercolors'
 
-import { LineChart, Line, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts'
+import { LineChart, Line, Tooltip, CartesianGrid, ReferenceArea } from 'recharts'
 
 
 class Scorebox extends PureComponent {
@@ -19,7 +19,6 @@ class Scorebox extends PureComponent {
   }
 
   chartClicked (ev) {
-    console.log(ev)
     this.props.actions.setFrame(ev.activeLabel)
   }
 
@@ -68,9 +67,7 @@ class Scorebox extends PureComponent {
     return (
       <div className="scorebox">
       <LineChart onClick={this.chartClicked} width={1200} height={150} data={this.state.chart}>
-        <XAxis dataKey="step" />
-        <YAxis />
-        <ReferenceLine x={this.props.frame} />
+        <ReferenceArea fillOpacity={0.2} x1={0} x2={this.props.frame} />
         <CartesianGrid stroke="#eee" />
       {
         players.map( (p,idx) => {

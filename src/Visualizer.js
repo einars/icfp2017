@@ -76,12 +76,9 @@ class Visualizer extends Component {
       ww = wx > wy ? wx : wy
       let cx = min_x + wx / 2
       let cy = min_y + wy / 2
-      console.log(`center at ${cx} ${cy}`)
-      console.log(`${min_x} .. ${max_x}, ${min_y} .. ${max_y}. ww = ${ww}`)
       wx = ww * 1.1
 
       let viewbox = `${cx - wx / 2} ${cy - wx / 2} ${wx} ${wx}`
-      console.log(`${viewbox}`)
 
       return viewbox
 
