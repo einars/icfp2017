@@ -35,3 +35,8 @@
   height:400px;
   overflow-y: scroll;
 }
+
+.punter-fixed {
+  width: 9em;
+  display: inline-block;
+}

@@ -10,19 +10,34 @@ class AvailableLogs extends Component {
     return (
       <div>
         <h2>Available logs</h2>
-        <div className="scrollpane panel panel-default">
-        <div className="panel-body">
+        <div className="scrollpane">
+        <table className="table table-condensed"><tbody>
         {
           this.props.games.map( g => {
-            let classname = "w100 btn-xs btn"
+            let classname = "btn btn-xs"
             if (g.name === this.props.game.id) classname += " btn-success"; else classname += " btn-default"
             return (
-              <button key={g.name} className={classname} onClick={() => this.props.actions.requestGame(g.name)}>{ g.name }</button>
+              <tr>
+                <td style={{verticalAlign: 'middle'}}>
+                  <button key={g.name} className={classname} onClick={() => this.props.actions.requestGame(g.name)}>{ g.map }</button>
+                </td>
+                <td style={{verticalAlign: 'middle'}}>
+                  {
+                    g.scores.map( s => {
+                      return (
+                        <div>
+                        <span key={s.punter} className="punter-fixed">{ s.name }</span> { s.score }<br />
+                        </div>
+                      )
+                    })
+                  }
+                </td>
+              </tr>
             )
           })
         }
-      </div>
-      </div>
+        </tbody></table>
+        </div>
       </div>
     )
   }

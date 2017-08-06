@@ -42,13 +42,13 @@ class Visualizer extends Component {
       }
     }
 
-    let ww
+    let pixelw
 
     const strokeWidthFor = m => {
       if (m.owner === null || m.frame === undefined || m.frame >= this.props.frame) {
-        return ww / 800
+        return pixelw
       } else {
-        return ww / 200
+        return pixelw * 3
       }
     }
 
@@ -73,10 +73,11 @@ class Visualizer extends Component {
 
       let wx = max_x - min_x
       let wy = max_y - min_y
-      ww = wx > wy ? wx : wy
+      let ww = wx > wy ? wx : wy
       let cx = min_x + wx / 2
       let cy = min_y + wy / 2
       wx = ww * 1.1
+      pixelw = wx / 1200
 
       let viewbox = `${cx - wx / 2} ${cy - wx / 2} ${wx} ${wx}`
 
@@ -99,7 +100,7 @@ class Visualizer extends Component {
         this.props.game.map.sites.map( m => {
           const coords = this.circle(m.id)
           return (
-            <circle className="svg-circle" r={ww / 500} cx={coords.x} cy={coords.y} key={`${m.id}`} stroke="#888888" fill="#ffffff" strokeWidth={ww / 400}><title>{m.id}</title></circle>
+            <circle className="svg-circle" r={pixelw * 3} cx={coords.x} cy={coords.y} key={`${m.id}`} stroke="#111" fill="rgba(255, 255, 255, 0.9)" strokeWidth={pixelw}><title>{m.id}</title></circle>
           )
         })
       }
@@ -107,7 +108,7 @@ class Visualizer extends Component {
         this.props.game.map.mines.map( m => {
           const coords = this.circle(m)
           return (
-            <circle className="svg-circle" r={ww / 250} cx={coords.x} cy={coords.y} key={`${m}`} stroke="#cc6666" fill="#cc6666" strokeWidth={ww / 400}><title>{m}</title></circle>
+            <circle className="svg-circle" r={pixelw * 7} cx={coords.x} cy={coords.y} key={`${m}`} stroke="#993300" fill="#ff0000" strokeWidth={pixelw * 3}><title>{m}</title></circle>
           )
         })
       }
