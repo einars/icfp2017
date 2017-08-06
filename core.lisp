@@ -322,26 +322,20 @@
     (loop as site across (state-sites state)
        do (when site
 	    (unless (in-network-p state site)
-	      (let ((site-score 0)
-		    (solution-exists nil)
-		    (nearest-mine-id nil)
-		    (nearest-mine-distance 100000000))
-		(loop as mine in (strat-network-data-master-network (state-strategy-data state))
-		   as mine-id = (mine-mine-id mine)
-		   as mine-info = (aref (site-mine-paths site) mine-id)
-		   do (let ((score (mine-path-info-score mine-info))
-			    (distance (mine-path-info-distance mine-info)))
-			(when distance
-			  (incf site-score score)
-			  (setf solution-exists t)
-			  (when (< distance nearest-mine-distance)
-			    (setf nearest-mine-id mine-id
-				  nearest-mine-distance distance)))))
-		(when (and solution-exists
-			   (> site-score best-score))
-		  (setf best-score site-score
-			best-candidate site
-			best-mine-id nearest-mine-id))))))
+	      (multiple-value-bind (site-score nearest-mine-id) (longest-score-site state site)
+		(when (and site-score (> site-score best-score))
+		  (let* ((init-river (next-shortest-path-river state site nearest-mine-id))
+			 (init-site-id (if (find-if (lambda (network)
+						      (find (car init-river) (network-site-ids network)))
+						    (state-networks state))
+					   (car init-river)
+					   (cdr init-river)))
+			 (adjusted-score (floor (+ site-score (longest-score-site state (aref (state-sites state) init-site-id)))
+						2)))
+		    (when (> adjusted-score best-score)
+		      (setf best-score adjusted-score
+			    best-candidate site
+			    best-mine-id nearest-mine-id))))))))
     (if best-candidate
 	(progn
 	  (format t "Moving towards S~d for expected payout ~d, nearest mine L~d~%"
@@ -350,6 +344,25 @@
 		  best-mine-id)
 	  (next-shortest-path-river state best-candidate best-mine-id))
 	(strategy-greedy state))))
+
+(defun longest-score-site (state site)
+  (let ((site-score 0)
+	(solution-exists nil)
+	(nearest-mine-id nil)
+	(nearest-mine-distance 100000000))
+    (loop as mine in (strat-network-data-master-network (state-strategy-data state))
+       as mine-id = (mine-mine-id mine)
+       as mine-info = (aref (site-mine-paths site) mine-id)
+       do (let ((score (mine-path-info-score mine-info))
+		(distance (mine-path-info-distance mine-info)))
+	    (when distance
+	      (incf site-score score)
+	      (setf solution-exists t)
+	      (when (< distance nearest-mine-distance)
+		(setf nearest-mine-id mine-id
+		      nearest-mine-distance distance)))))
+    (values (and solution-exists site-score)
+	    nearest-mine-id)))
 
 (defstruct (strat-evil-state (:type list))
   opponents)
