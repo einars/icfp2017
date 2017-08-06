@@ -59,14 +59,16 @@ class App extends Component {
         <Visualizer />
         <div>
           <Scorebox />
-          {
-            this.state.is_autoplay
-            ? <button className="btn btn-default" onClick={this.togglePlay}>Pause</button>
-            : <button className="btn btn-default" onClick={this.togglePlay}>Play</button>
-          }
-          {
-            <input type="range" value={this.props.frame} min={0} max={this.props.game.moves.length} onChange={this.rangeChanged} />
-          }
+          <div className="row">
+            <div className="col-sm-1">
+            <button className="w100 btn btn-default" onClick={this.togglePlay}>
+              {this.state.is_autoplay ? 'Pause' : 'Play'}
+              </button>
+            </div>
+            <div className="col-sm-11">
+              <input className="form-control" type="range" value={this.props.frame} min={0} max={this.props.game.moves.length} onChange={this.rangeChanged} />
+            </div>
+          </div>
         </div>
       </div>
       <div className="col-md-3">
