@@ -197,96 +197,7 @@ let claim : game_t -> player_t -> river_t -> bool
 ;;
 
 
-let neighbour_nodes map node filter =
-  List.map map.rivers ~f:(fun r ->
-    if not (filter r) then None
-    else if r.source = node then Some r.target
-    else if r.target = node then Some r.source
-    else None)
-  |> List.filter ~f:(fun r -> r <> None)
-  |> List.map ~f:uw
-;;
 
-
-let build_mine_score_map : map_t -> int -> int Int.Table.t
-= fun map node_id ->
-
-  let dists = Int.Table.create () in
-  let queue = ref [] in
-
-  let rec loop distance = function
-  | h::t ->
-    let nodes = neighbour_nodes map h (fun _ -> true) in
-    List.iter nodes ~f:(fun node_id ->
-      if None <> Hashtbl.find dists node_id then ()
-      else (
-        queue := node_id :: !queue;
-        Hashtbl.set dists ~key:node_id ~data:distance
-      );
-    );
-    loop distance t
-  | [] -> 
-    if !queue <> [] then (
-      let nq = !queue in
-      queue := [];
-      loop (distance + 1) nq;
-    )
-  in
-
-  Hashtbl.set dists ~key:node_id ~data:0;
-  loop 1 [node_id];
-  dists
-;;
-
-
-    
-let calculate_mine_score game player mine =
-
-  let score = ref 0 in
-  let seen = ref [] in
-  let queue = ref [] in
-
-  let is_seen_node n = List.exists ~f:(fun x -> x = n) !seen
-  in
-
-  let dist_map = build_mine_score_map game.map mine in
-
-  let nodes_belonging_to_player_out_of node =
-    neighbour_nodes game.map node (fun r -> r.owner <> None && uw r.owner = player.id)
-  in
-
-  let rec loop = function
-  | h::t ->
-    let nodes = nodes_belonging_to_player_out_of h in
-    List.iter nodes ~f:(fun node_id ->
-      if not (is_seen_node node_id) then (
-        seen := node_id :: !seen;
-        queue := node_id :: !queue;
-        let distance = Hashtbl.find_exn dist_map node_id in
-        score := !score + distance * distance
-      );
-    );
-    loop t
-  | [] -> 
-    if !queue = [] then !score
-    else (
-      let nq = !queue in
-      queue := [];
-      loop nq;
-    )
-  in
-
-  loop [mine]
-  
-;;
-
-let calculate_score game p =
-  List.fold_left game.map.mines ~f:(fun score mine -> score + calculate_mine_score game p mine) ~init:0
-;;
-
-let calculate_scores game =
-  List.map game.players ~f:(fun p -> p.id, p.name, calculate_score game p + Futures.score game p)
-;;
 
 let json_of_scores scores =
   `List (List.map scores ~f:(fun (id, name, score) -> `Assoc [
@@ -296,6 +207,9 @@ let json_of_scores scores =
   ]))
 ;;
   
+let scores game =
+  List.map game.players ~f:(fun p -> p.id, p.name, Game.score game p + Futures.score game p)
+;;
 
 let host_game : game_t -> int -> unit Deferred.t =
   fun game port ->
@@ -306,7 +220,7 @@ let host_game : game_t -> int -> unit Deferred.t =
   let log_game () =
     let gamestate = `Assoc [
         "file", `String game.map.source;
-        "scores", calculate_scores game |> json_of_scores;
+        "scores", scores game |> json_of_scores;
         "moves", json_of_all_moves game;
         "map", map_to_json ~ext:true game.map
       ] in
@@ -323,7 +237,7 @@ let host_game : game_t -> int -> unit Deferred.t =
 
     let final_json = `Assoc [ "stop", `Assoc [
         "moves", json_of_player_moves game;
-        "scores", calculate_scores game |> json_of_scores;
+        "scores", scores game |> json_of_scores;
       ]] in
     push_to_all_players game final_json
 

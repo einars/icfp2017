@@ -2,16 +2,18 @@ open Async
 
 type json = Yojson.Basic.json
 
-type site_t = {
-  id: int;
-  x: json;
-  y: json;
-}
-
 type river_t = {
   source: int;
   target: int;
   mutable owner: int option
+}
+
+
+type site_t = {
+  id: int;
+  x: json;
+  y: json;
+  neighbors: (int * river_t) list;
 }
 
 type move_t = Pass of int | Claim of int * river_t
