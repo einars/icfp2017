@@ -3,7 +3,7 @@ open Types
 
 val augment_setup_message : json -> json
 
-val augment_player : state_t -> player_t -> json -> unit
+val augment_player : game_t -> player_t -> json -> unit
 
-val score : state_t -> player_t -> int
+val score : game_t -> player_t -> int
 

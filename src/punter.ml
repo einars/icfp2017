@@ -7,43 +7,6 @@ let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then 
 
 module JU = Yojson.Basic.Util
 
-let take_sites sjs =
-  let open JU in
-  List.map sjs ~f:(fun elem ->
-    let id = member "id" elem |> to_int in
-    let x = JU.member "x" elem in
-    let y = JU.member "y" elem in
-    { id; x; y }
-  )
-;;
-
-let take_rivers sjs =
-  let open JU in
-  List.map sjs ~f:(fun elem ->
-    let source = member "source" elem |> to_int in
-    let target  = member "target" elem |> to_int in
-    {
-      source; target;
-      owner = None
-    }
-  )
-;;
-
-let take_mines sjs =
-  List.map sjs ~f:JU.to_int
-;;
-
-
-let load_map file_name = 
-  log "Loading map %s..." file_name;
-  let mjs = Yojson.Basic.from_file file_name in
-  {
-    source = file_name;
-    sites = mjs |> JU.member "sites" |> JU.to_list |> take_sites;
-    rivers = mjs |> JU.member "rivers" |> JU.to_list |> take_rivers;
-    mines = mjs |> JU.member "mines" |> JU.to_list |> take_mines;
-  }
-;;
 
 let map_to_json ?ext:(ext=false) m =
   `Assoc [
@@ -71,42 +34,7 @@ let map_to_json ?ext:(ext=false) m =
   ]
 ;;
 
-let print_map m = 
-  log "%s [sites=%d, rivers=%d, mines=%d]" 
-    (m.source)
-    (List.length m.sites)
-    (List.length m.rivers)
-    (List.length m.mines);
-;;
 
-
-let make_players n_players =
-  let out = ref [] in
-  for i = 0 to n_players - 1 do
-    out := {
-      id = i;
-      is_initialized = false;
-      name = "";
-      offline_state = None;
-      last_move = Pass i;
-      handle_r = None;
-      handle_w = None;
-      iv_keepalive = Ivar.create ();
-
-      futures = [];
-    } :: !out
-  done;
-  List.rev !out
-;;
-
-
-let new_game map n_players = 
-  {
-    map;
-    players = make_players n_players;
-    moves = [];
-  }
-;;
 
 
 
@@ -208,7 +136,7 @@ let json_of_all_moves game =
   `List ( List.map game.moves ~f:json_of_move )
 ;;
 
-let json_of_game : state_t -> player_t -> json
+let json_of_game : game_t -> player_t -> json
   = fun game p ->
   (`Assoc [
     "punter", `Int p.id;
@@ -248,7 +176,7 @@ let do_moves_for_all_players game get_data process_response =
   loop game.players
 ;;
 
-let claim : state_t -> player_t -> river_t -> bool
+let claim : game_t -> player_t -> river_t -> bool
 = fun game player river ->
   let elem = List.find game.map.rivers ~f:(
     fun r -> (r.source = river.source && r.target = river.target) || (r.source = river.target && r.target = river.source)
@@ -369,7 +297,7 @@ let json_of_scores scores =
 ;;
   
 
-let host_game : state_t -> int -> unit Deferred.t =
+let host_game : game_t -> int -> unit Deferred.t =
   fun game port ->
 
   let iv_all_connected = Ivar.create() in

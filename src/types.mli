@@ -38,7 +38,7 @@ type map_t = {
 }
 
 
-type state_t = {
+type game_t = {
   players: player_t list;
   mutable moves: move_t list;
   map: map_t;

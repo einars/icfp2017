@@ -9,10 +9,9 @@ let _ = (
   end else begin
     let port = int_of_string Sys.argv.(1) in
     let n_players = int_of_string Sys.argv.(2) in
-    let map = Punter.load_map Sys.argv.(3) in
-    Punter.print_map map;
-
-    let game = Punter.new_game map n_players in
+    let map = Game.load_map Sys.argv.(3) in
+    Game.print_map map;
+    let game = Game.new_game map n_players in
 
     ignore(
     Punter.host_game game port

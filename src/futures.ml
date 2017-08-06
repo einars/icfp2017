@@ -3,6 +3,8 @@ open Types
 
 module JU = Yojson.Basic.Util
 
+let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then String.sub ~pos:0 ~len:512 s else s)) s
+
 let json_get_map : json -> string -> json
 = fun source k ->
   match source with 
@@ -53,14 +55,14 @@ let augment_player game player json =
     let source = JU.member "source" fut |> JU.to_int in
     let target = JU.member "target" fut |> JU.to_int in
 
-    printf "Player %d/%s creating future %d->%d\n%!" player.id player.name source target;
+    log "Player %d/%s creating future %d->%d" player.id player.name source target;
 
     if not (Game.is_mine game.map source) then (
-      printf "Future source is not a mine, skipping.\n%!"
+      log "Future source is not a mine, skipping."
     ) else if Game.is_mine game.map target then (
-      printf "Future target is a mine, skipping.\n%!"
+      log "Future target is a mine, skipping."
     ) else if Set.mem !used_futures source then (
-      printf "Source already futured, skipping.\n%!"
+      log "Source already futured, skipping."
     ) else (
       used_futures := Set.add !used_futures source;
       let river = { source; target; owner = None } in
