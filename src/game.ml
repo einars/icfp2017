@@ -121,6 +121,7 @@ let blank_player i =
       handle_w = None;
       iv_keepalive = Ivar.create ();
       futures = [];
+      splurge = 0;
     }
 
 let make_players n_players =

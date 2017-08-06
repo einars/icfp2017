@@ -85,6 +85,12 @@ let write_to_player : player_t -> json -> unit Deferred.t
   Writer.flushed (uw p.handle_w)
 ;;
 
+let read_player_splurges json =
+  JU.member "route" json
+  |> JU.to_list
+  |> List.map ~f:JU.to_int
+;;
+
 
 let decode_player_command : player_t -> json -> move_t
 = fun p data ->
@@ -92,13 +98,13 @@ let decode_player_command : player_t -> json -> move_t
   (match data with
   | `Assoc pts ->
     List.iter pts ~f:(fun (k,v) ->
-      if (k = "claim")
-      then command := Claim (p.id, {
+      if k = "claim" then command := Claim (p.id, {
         source = JU.member "source" v |> JU.to_int;
         target = JU.member "target" v |> JU.to_int;
         owner = None;
       }, 0)
-      else if (k = "pass") then command := Pass p.id
+      else if k = "pass" then command := Pass p.id
+      else if k = "splurge" then command := Splurge (p.id, (read_player_splurges v), 0)
     );
   | _ -> log "Some crap received, using pass"
   );
@@ -111,7 +117,6 @@ let send_and_read : player_t -> json -> json Deferred.t
   write_to_player p data 
   >>= fun _ ->
   read_from_player p;
-  (* probably parse futures here *)
 ;;
 
 
@@ -128,6 +133,7 @@ let await_all threads =
 let json_of_move = function
   | Pass id -> `Assoc [ "pass", `Assoc [ "punter", `Int id]]
   | Claim (id, river, score) -> `Assoc [ "claim", `Assoc [ "punter", `Int id; "source", `Int river.source; "target", `Int river.target; "score", `Int score]]
+  | Splurge (id, route, score) -> `Assoc [ "splurge", `Assoc [ "punter", `Int id; "route", `List (List.map route ~f:(fun site -> `Int site)); "score", `Int score]]
 ;;
 
 let json_of_player_moves game =
@@ -143,7 +149,8 @@ let json_of_game : game_t -> player_t -> json
   (`Assoc [
     "punter", `Int p.id;
     "punters", `Int (List.length game.players);
-    "map", map_to_json game.map
+    "map", map_to_json game.map;
+    "settings", `Assoc [ "splurge", `Bool true ]
   ])
 ;;
   
@@ -196,6 +203,42 @@ let claim : game_t -> player_t -> river_t -> bool
       false
     )
   )
+;;
+
+let claim_splurge : game_t -> player_t -> int list -> bool
+= fun game player route ->
+(* tk: may we actually splurge? *)
+
+  let rec validate = function 
+  | s1 :: s2 :: t ->
+    let s = Game.find_site game.map.sites s1 in
+    if (None <> List.find s.neighbors ~f:(fun (node, river) -> node = s2 && river.owner = None))
+    then validate (s2 :: t)
+    else false
+  | _ -> true
+  in
+
+  let rec apply = function 
+  | s1 :: s2 :: t ->
+    let s = Game.find_site game.map.sites s1 in
+    let _, river = List.find s.neighbors ~f:(fun (node, river) -> node = s2 && river.owner = None) |> uw in
+    river.owner <- Some player.id;
+    apply (s2 :: t)
+  | _ -> ()
+  in
+
+  let route_len = List.length route in
+
+  if (route_len > player.splurge + 2) then (
+    log "Player %d/%s attempted an unearned splurge (route_len=%d, player_splurge=%d + 2), boo"
+      player.id player.name route_len player.splurge;
+    false
+  ) else if validate route then (
+    log "Player %d/%s successfully claimed splurge, len %d"
+      player.id player.name route_len;
+      
+    apply route; true
+  ) else false
 ;;
 
 
@@ -254,15 +297,27 @@ let host_game : game_t -> int -> unit Deferred.t =
         match cmd with
         | Pass _ -> 
           p.last_move <- cmd;
+          p.splurge <- p.splurge + 1;
           game.moves <- cmd :: game.moves;
           return ()
         | Claim (_, coords, _) ->
+          p.splurge <- 0;
           if (claim game p coords) then (
             p.last_move <- Claim (p.id, coords, if keep_score then (Game.score game p + Futures.score game p) else -1);
           ) else (
             log "Claim failed";
             p.last_move <- Pass p.id;
           );
+          game.moves <- p.last_move :: game.moves;
+          return ()
+        | Splurge (_, route, _) ->
+          if (claim_splurge game p route) then (
+            p.last_move <- Splurge (p.id, route, if keep_score then (Game.score game p + Futures.score game p) else -1);
+          ) else (
+            log "Splurge failed";
+            p.last_move <- Pass p.id;
+          );
+          p.splurge <- 0;
           game.moves <- p.last_move :: game.moves;
           return ()
       )

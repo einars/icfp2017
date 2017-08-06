@@ -17,7 +17,8 @@ type site_t = {
   neighbors: (int * river_t) list;
 }
 
-type move_t = Pass of int | Claim of int * river_t * int
+type move_t = Pass of int | Claim of int * river_t * int | Splurge of int * int list * int
+(* splurge: player * site_id list * score *)
 
 type mine_t = {
   id: int;
@@ -35,6 +36,7 @@ type player_t = {
   iv_keepalive: unit Ivar.t; (* ivar to signal that connection may be terminated *)
 
   mutable futures: river_t list;
+  mutable splurge: int;
 }
 
 
