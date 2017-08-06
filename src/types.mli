@@ -17,7 +17,7 @@ type site_t = {
   neighbors: (int * river_t) list;
 }
 
-type move_t = Pass of int | Claim of int * river_t
+type move_t = Pass of int | Claim of int * river_t * int
 
 type mine_t = {
   id: int;

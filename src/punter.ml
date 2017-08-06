@@ -3,6 +3,8 @@ open Async
 open Types
 
 
+let keep_score = true
+
 let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then String.sub ~pos:0 ~len:512 s else s)) s
 
 module JU = Yojson.Basic.Util
@@ -95,7 +97,7 @@ let decode_player_command : player_t -> json -> move_t
         source = JU.member "source" v |> JU.to_int;
         target = JU.member "target" v |> JU.to_int;
         owner = None;
-      })
+      }, 0)
       else if (k = "pass") then command := Pass p.id
     );
   | _ -> log "Some crap received, using pass"
@@ -125,7 +127,7 @@ let await_all threads =
 
 let json_of_move = function
   | Pass id -> `Assoc [ "pass", `Assoc [ "punter", `Int id]]
-  | Claim (id, river) -> `Assoc [ "claim", `Assoc [ "punter", `Int id; "source", `Int river.source; "target", `Int river.target ]]
+  | Claim (id, river, score) -> `Assoc [ "claim", `Assoc [ "punter", `Int id; "source", `Int river.source; "target", `Int river.target; "score", `Int score]]
 ;;
 
 let json_of_player_moves game =
@@ -254,9 +256,9 @@ let host_game : game_t -> int -> unit Deferred.t =
           p.last_move <- cmd;
           game.moves <- cmd :: game.moves;
           return ()
-        | Claim (_, coords) ->
+        | Claim (_, coords, _) ->
           if (claim game p coords) then (
-            p.last_move <- cmd;
+            p.last_move <- Claim (p.id, coords, if keep_score then (Game.score game p + Futures.score game p) else -1);
           ) else (
             log "Claim failed";
             p.last_move <- Pass p.id;
