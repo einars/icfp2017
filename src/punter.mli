@@ -1,11 +1,5 @@
 open Async
-
-type player_t
-type site_t
-type river_t
-type move_t
-type map_t
-type state_t
+open Types
 
 val load_map : string -> map_t
 val print_map : map_t -> unit
