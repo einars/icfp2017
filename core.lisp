@@ -460,11 +460,11 @@
 	    (let ((best-candidate nil)
 		  (first-mine nil)
 		  (other-mine nil)
-		  (max-potential 0)
+		  (max-potential 1000000000)
 		  (shortest-path 1000000000))
 	      (loop as mine in (state-mines state)
 		 do (let ((potential (mine-potential mine)))
-		      (when (> potential max-potential)
+		      (when (< potential max-potential)
 			(setf first-mine mine
 			      max-potential potential))))
 	      (loop as mine2 in (state-mines state)
