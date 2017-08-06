@@ -27,7 +27,8 @@
 (defstruct (mine (:type list))
   site
   site-id
-  mine-id)
+  mine-id
+  potential)
 
 (defstruct (site (:type list)
 		 (:constructor make-site-1))
@@ -94,7 +95,8 @@
        as mine-id from 0
        do (push (make-mine :site (aref (state-sites state) mine)
 			   :site-id mine
-			   :mine-id mine-id)
+			   :mine-id mine-id
+			   :potential 0)
 		(state-mines state)))
     (setf (state-mines state) (nreverse (state-mines state)))
     (loop as mine in (state-mines state)
@@ -110,10 +112,12 @@
     (loop as site across (state-sites state)
        do (when site
 	    (loop as mine-info across (site-mine-paths site)
+	       as mine in (state-mines state)
 	       do (setf (mine-path-info-score mine-info)
 			(if-let ((distance (mine-path-info-distance mine-info)))
 			  (* distance distance)
-			  0)))))
+			  0))
+	       do (incf (mine-potential mine) (mine-path-info-score mine-info)))))
     state))
 
 (defun site-mine-path-info (site mine-id)
@@ -137,7 +141,7 @@
 
 (defun print-state (state)
   (loop as mine in (state-mines state)
-       do (format t "Mine ~d => S~d~%" (mine-mine-id mine) (mine-site-id mine)))
+       do (format t "Mine ~d => S~d, potential ~d~%" (mine-mine-id mine) (mine-site-id mine) (mine-potential mine)))
   (loop as site across (state-sites state)
        for i from 0
      do (if site
@@ -301,8 +305,7 @@
     (setf (state-strategy-data state)
 	  (coerce (state-sites state) 'list)))
   (let ((best-candidate nil)
-	(best-score 0)
-	(start-sites nil))
+	(best-score 0))
     (dolist (network (state-networks state))
       (dolist (site (network-sites network))
 	(dolist (neighbor (site-neighbors site))
@@ -312,7 +315,6 @@
 		(when (> new-score best-score)
 		  (setf best-score new-score
 			best-candidate (river-id site neighbor)))))))))
-    (format t "Expected delta ~d~%" best-score)
     best-candidate))
 
 (defun strategy-longest (state)
@@ -452,21 +454,24 @@
 	    (let ((best-candidate nil)
 		  (first-mine nil)
 		  (other-mine nil)
+		  (max-potential 0)
 		  (shortest-path 1000000000))
-	      (loop as mine1 in (state-mines state)
-		 do (loop as mine2 in (state-mines state)
-		       do (unless (eq mine1 mine2)
-			    (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
-			      (format t "Evaluating L~d to L~d: distance ~A~%" (mine-mine-id mine1) (mine-mine-id mine2) (mine-path-info-distance path-info))
-			      (when (and (mine-path-info-distance path-info)
-					 (< (mine-path-info-distance path-info) shortest-path))
-				(setf shortest-path (mine-path-info-distance path-info)
-				      best-candidate (mine-site mine2)
-				      first-mine mine1
-				      other-mine mine2))))))
+	      (loop as mine in (state-mines state)
+		 do (let ((potential (mine-potential mine)))
+		      (when (> potential max-potential)
+			(setf first-mine mine
+			      max-potential potential))))
+	      (loop as mine2 in (state-mines state)
+		 do (unless (eq mine2 first-mine)
+		      (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id first-mine))))
+			(when (and (mine-path-info-distance path-info)
+				   (< (mine-path-info-distance path-info) shortest-path))
+			  (setf shortest-path (mine-path-info-distance path-info)
+				best-candidate (mine-site mine2)
+				other-mine mine2)))))
+	      (push first-mine (strat-network-data-master-network setup))
 	      (if best-candidate
 		  (progn
-		    (push first-mine (strat-network-data-master-network setup))
 		    (setf (strat-network-data-next-goal setup) best-candidate)
 		    (setf (strat-network-data-origin setup) (mine-mine-id first-mine))
 		    (setf (strat-network-data-goal-mine setup) other-mine)
