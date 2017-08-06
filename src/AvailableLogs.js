@@ -28,16 +28,16 @@ class AvailableLogs extends Component {
             let classname = "btn btn-xs"
             if (g.name === this.props.game.id) classname += " btn-success"; else classname += " btn-default"
             return (
-              <tr>
+              <tr key={g.name}>
                 <td style={{verticalAlign: 'middle'}}>
-                  <button key={g.name} className={classname} onClick={() => this.props.actions.requestGame(g.name)}>{ g.map }</button>
+                  <button className={classname} onClick={() => this.props.actions.requestGame(g.name)}>{ g.map }</button>
                 </td>
                 <td style={{verticalAlign: 'middle'}}>
                   {
                     g.scores.map( s => {
                       return (
-                        <div>
-                        <span key={s.punter} className="punter-fixed">{ s.name }</span> { s.score }<br />
+                        <div key={s.punter} >
+                        <span className="punter-fixed">{ s.name }</span> { s.score }<br />
                         </div>
                       )
                     })
