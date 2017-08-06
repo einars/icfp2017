@@ -102,6 +102,18 @@ class Visualizer extends Component {
     this.setState({ dragging: false });
   }
 
+  componentWillReceiveProps (next) {
+    if (next.game !== this.props.game) {
+      this.setState({
+        offsX: 0,
+        offsY: 0,
+        zoom: 1.1,
+        is_dragging: false,
+      })
+      
+    }
+  }
+
 
   render () {
 
