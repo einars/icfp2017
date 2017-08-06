@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { PureComponent } from 'react';
 import './App.css';
 import { connect } from 'react-redux'
 
@@ -11,7 +11,7 @@ import Scorebox from './Scorebox'
 import { setFrame } from './actions'
 import { bindActionCreators } from 'redux'
 
-class App extends Component {
+class App extends PureComponent {
 
   constructor (props) {
     super(props);

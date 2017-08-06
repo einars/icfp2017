@@ -1,9 +1,9 @@
-import React, { Component } from 'react'
+import React, { PureComponent } from 'react'
 import { connect } from 'react-redux'
 
 import playercolors from './playercolors'
 
-class Visualizer extends Component {
+class Visualizer extends PureComponent {
 
   constructor (props) {
     super(props)

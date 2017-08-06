@@ -5,13 +5,14 @@ import { Provider } from 'react-redux'
 
 import App from './App';
 
-import { createStore, applyMiddleware } from 'redux'
+import { createStore, applyMiddleware, compose } from 'redux'
 import thunkMiddleware from 'redux-thunk'
 
 import { requestGames } from './actions'
 import reducers from './reducers'
 
-const store = createStore(reducers, applyMiddleware(thunkMiddleware))
+const composeEnhancers = window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ || compose
+const store = createStore(reducers, composeEnhancers(applyMiddleware(thunkMiddleware)))
 
 store.dispatch( requestGames() )
 
