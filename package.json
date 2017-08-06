@@ -2,6 +2,7 @@
   "name": "puntlog-visualizer",
   "version": "0.1.0",
   "private": true,
+  "homepage": "http://192.168.8.105/vis/",
   "dependencies": {
     "axios": "^0.16.2",
     "immutability-helper": "^2.3.0",
