@@ -26,7 +26,8 @@ class App extends Component {
   }
 
   rangeChanged (ev) {
-    this.props.actions.setFrame( ev.target.value )
+    this.props.actions.setFrame( + ev.target.value )
+    this.setState({ is_autoplay: false })
   }
 
   componentDidMount () {
