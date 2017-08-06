@@ -53,12 +53,15 @@
   sites
   mines)
 
-(defun clone-state (state)
+(defun serialize-state (state)
   (let ((*print-circle* t)
-	(*print-readably* t))
-    (read-from-string
-     (with-output-to-string (out)
-       (prin1 state out)))))
+	(*print-readably* t)
+	(*print-pretty* nil))
+    (with-output-to-string (out)
+      (prin1 state out))))
+
+(defun clone-state (state)
+  (read-from-string (serialize-state state)))
 
 (defun assocr (item alist)
   (cdr (assoc item alist)))
