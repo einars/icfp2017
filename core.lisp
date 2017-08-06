@@ -404,7 +404,10 @@
   next-goal
   goal-mine
   origin
-  alt-strategy)
+  alt-strategy
+  anti-anti-move-state
+  anti-anti-move-next-river
+  anti-atni-move-goal)
 
 (defun in-network-p (state site)
   (find-if (lambda (network)
@@ -489,18 +492,41 @@
   (let* ((setup (state-strategy-data state))
 	 (goal (strat-network-data-next-goal setup))
 	 (origin (strat-network-data-origin setup)))
-    (let ((next-river (next-shortest-path-river state goal origin)))
+    (format t "Advancing network towards S~d from mine L~d~%" (site-id goal) origin)
+    (when (and (eql (strat-network-data-anti-anti-move-state setup) 1)
+	       (find (strat-network-data-anti-anti-move-next-river setup) (state-rivers state) :test #'equalp))
+      (progn
+	(setf (strat-network-data-anti-anti-move-state setup) 2
+	      (strat-network-data-next-goal setup) (strat-network-data-anti-atni-move-goal setup)
+	      (strat-network-data-origin setup) (mine-mine-id (strat-network-data-goal-mine setup))
+	      (strat-network-data-goal-mine setup) (elt (state-mines state) origin))
+	(return-from strat-network-advance (strat-network-data-anti-anti-move-next-river setup))))
+    (multiple-value-bind (next-river curr-site next-site) (next-shortest-path-river state goal origin)
       (unless next-river
 	(format t "Could not reach goal L~d, giving up~%" (mine-mine-id (strat-network-data-goal-mine setup)))
-	(setf (strat-network-data-next-goal setup) nil)
+	(setf (strat-network-data-next-goal setup) nil
+	      (strat-network-data-anti-anti-move-state setup) nil)
 	(return-from strat-network-advance (strategy-network state)))
+      (format t "Current anti-strat state is ~A~%" (strat-network-data-anti-anti-move-state setup))
+      (unless (strat-network-data-anti-anti-move-state setup)
+	(format t "Considering anti-strat at ~A / ~A~%" (site-id curr-site) (site-id next-site))
+	(dolist (pot-source (site-neighbors next-site))
+	  (unless (eq pot-source curr-site)
+	    (when (find curr-site (site-neighbors pot-source))
+	      (format t "Next river: ~A~%" (river-id curr-site pot-source))
+	      (setf (strat-network-data-anti-anti-move-state setup) 1
+		    (strat-network-data-anti-anti-move-next-river setup) (river-id curr-site pot-source)
+		    (strat-network-data-anti-atni-move-goal setup) curr-site)))))
       (when (or (eql (site-id goal) (car next-river))
 		(eql (site-id goal) (cdr next-river)))
-	(setf (strat-network-data-next-goal setup) nil)
+	(setf (strat-network-data-next-goal setup) nil
+	      (strat-network-data-anti-anti-move-state setup) nil)
 	(format t "Reached L~d~%" (mine-mine-id (strat-network-data-goal-mine setup)))
 	(push (strat-network-data-goal-mine setup)
 	      (strat-network-data-master-network setup)))
-      next-river)))
+      (if (find next-river (state-rivers state) :test #'equalp)
+	  next-river
+	  (strategy-network state)))))
 
 (defun next-shortest-path-river (state site mine-id)
   (when site
@@ -508,10 +534,11 @@
 	   (prev-site (mine-path-info-prev-site path-info))
 	   (joined nil))
       (dolist (network (state-networks state))
-	(when (find prev-site (network-sites network))
+	(when (and (find mine-id (network-mines network) :key #'mine-mine-id)
+		   (find prev-site (network-sites network)))
 	  (setf joined t)))
       (if joined
-	  (river-id site prev-site)
+	  (values (river-id site prev-site) prev-site site)
 	  (next-shortest-path-river state prev-site mine-id)))))
 
 (defun calc-claim-score (state origin site)
