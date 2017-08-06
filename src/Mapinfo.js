@@ -15,7 +15,7 @@ class Mapinfo extends Component {
 
     return (
       <div>
-        Frame: {this.props.frame} of {this.props.game.moves.length + 1}<br />
+        Frame: {this.props.frame} of {this.props.game.moves.length}<br />
         Move: {move}<br />
         Game: {g.id}<br />
         File: {g.file}<br />

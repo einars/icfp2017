@@ -5,7 +5,7 @@ import { bindActionCreators } from 'redux'
 
 import playercolors from './playercolors'
 
-import { LineChart, Line, Tooltip, CartesianGrid, ReferenceArea } from 'recharts'
+import { LineChart, Line, Tooltip, CartesianGrid, ReferenceArea, ReferenceLine, XAxis } from 'recharts'
 
 
 class Scorebox extends PureComponent {
@@ -30,19 +30,51 @@ class Scorebox extends PureComponent {
 
   makeChart (g) {
     
+    const thinnedList = (ls, target) => {
+      let increase = target
+      if (ls.length > target)
+        increase = target * target / g.moves.length
+      let out = []
+      let r = 0
+      ls.forEach( (e, idx) => {
+        r += increase
+        if (r >= target || idx === 0 || idx === (ls.length - 1)) {
+         r = 0
+         out.push(e)
+        }
+      })
+
+      console.log(`Thinned list from ${ls.length} to ${out.length}`)
+      console.log(`Increase: ${increase}`)
+
+      return out
+
+    }
+
     const players = g.scores.map(p => p.punter)
 
-    let out = [{step: 0}]
-    g.moves.forEach((m, idx) => { out.push({step: idx + 1}) })
 
+    let out = [{step: 0}]
+
+    let r = 0
+    let idx = 1
     players.forEach( player_id => {
       let score = 0
-      out[0][`p${player_id}`] = score
-      g.moves.forEach((m, idx) => {
+      let moves = g.moves.map( (m, idx) => {
         if ( !! m.claim && m.claim.punter === player_id ) {
           score = m.claim.score
         }
-        out[idx + 1][`p${player_id}`] = score
+        return [idx, score]
+      })
+
+      let thinned_moves = thinnedList (moves, 100)
+
+      thinned_moves.forEach((m, idx) => {
+        if ( ! out[idx + 1]) {
+          out[idx + 1] = {step: m[0] + 1}
+        }
+        if (out[idx + 1]['step'] !== m[0]) console.log('thinned data warning, there are bugs')
+        out[idx + 1][`p${player_id}`] = m[1]
       })
     })
     return out
@@ -57,7 +89,7 @@ class Scorebox extends PureComponent {
     if ( ! g.scores || ! g.scores.length) return null
 
 
-    if (g.moves.length > 1200) return (
+    if (false && g.moves.length > 1200) return (
         <div className="scorebox">
         <p className="text-muted">Scorebox disabled, too many nodes</p>
         </div>
@@ -76,14 +108,18 @@ class Scorebox extends PureComponent {
     return (
       <div className="scorebox">
       <LineChart onClick={this.chartClicked} width={1200} height={150} data={this.state.chart}>
-        <ReferenceArea fillOpacity={0.2} x1={0} x2={this.props.frame} />
+        <XAxis dataKey="step" type="number" />
+        {
+           // <ReferenceLine fillOpacity={0.2} x1={0} x2={this.props.frame} />
+           <ReferenceArea fillOpacity={0.2} x1={0} x2={this.props.frame} /> 
+        }
         <CartesianGrid stroke="#eee" />
       {
         players.map( (p,idx) => {
           let key = `p${p}`
           let stroke = getStroke(p)
           return (
-            <Line isAnimationActive={false} key={idx} type="linear" dataKey={key} stroke={stroke} dot={false} activeDot={{d: 3}} />
+            <Line isAnimationActive={false} key={idx} type="monotone" dataKey={key} stroke={stroke} dot={false} activeDot={{d: 3}} />
           )
         })
       }
