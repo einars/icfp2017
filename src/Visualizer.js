@@ -91,12 +91,12 @@ class Visualizer extends Component {
 
 
     return (
-      <svg width={800} height={800} viewBox={viewbox()} className="visualization">
+      <svg width={1200} height={800} viewBox={viewbox()} className="visualization">
       {
         this.props.game.map.rivers.map( m => {
           const coords = this.line(m.source, m.target)
           return (
-            <line key={`${m.source}:${m.target}`} className={`svg-river-${m.owner === null ? 'none' : m.owner}`} fill="none" stroke={strokeColorFor(m)} strokeWidth={strokeWidthFor(m)} {...coords} />
+            <line className="svg-line" key={`${m.source}:${m.target}`} stroke={strokeColorFor(m)} strokeWidth={strokeWidthFor(m)} {...coords}><title>{m.source} ... {m.target}</title></line>
           )
         })
       }
@@ -104,7 +104,7 @@ class Visualizer extends Component {
         this.props.game.map.sites.map( m => {
           const coords = this.circle(m.id)
           return (
-            <circle r={ww / 500} cx={coords.x} cy={coords.y} key={`${m.id}`} stroke="#888888" fill="#ffffff" strokeWidth={ww / 400} />
+            <circle className="svg-circle" r={ww / 500} cx={coords.x} cy={coords.y} key={`${m.id}`} stroke="#888888" fill="#ffffff" strokeWidth={ww / 400}><title>{m.id}</title></circle>
           )
         })
       }
@@ -112,7 +112,7 @@ class Visualizer extends Component {
         this.props.game.map.mines.map( m => {
           const coords = this.circle(m)
           return (
-            <circle r={ww / 250} cx={coords.x} cy={coords.y} key={`${m}`} stroke="#cc6666" fill="#cc6666" strokeWidth={ww / 400} />
+            <circle className="svg-circle" r={ww / 250} cx={coords.x} cy={coords.y} key={`${m}`} stroke="#cc6666" fill="#cc6666" strokeWidth={ww / 400}><title>{m}</title></circle>
           )
         })
       }
@@ -124,6 +124,7 @@ class Visualizer extends Component {
 const mapStateToProps = (state, ownProps) => {
   return {
     game:  state.game,
+    frame: state.frame,
   }
 }
 

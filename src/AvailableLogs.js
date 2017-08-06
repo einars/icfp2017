@@ -10,14 +10,17 @@ class AvailableLogs extends Component {
     return (
       <div>
         <h2>Available logs</h2>
+        <div className="scrollpane">
         {
           this.props.games.map( g => {
-            let classname = "w100 btn-xs btn btn-default"
+            let classname = "w100 btn-xs btn"
+            if (g.name === this.props.game.id) classname += " btn-success"; else classname += " btn-default"
             return (
               <button key={g.name} className={classname} onClick={() => this.props.actions.requestGame(g.name)}>{ g.name }</button>
             )
           })
         }
+      </div>
       </div>
     )
   }

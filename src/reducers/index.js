@@ -11,6 +11,7 @@ import { types } from '../actions/types'
 
 
 export default function stuff (state = {
+  frame: 0,
   games: [],
   game: {
     map: {
@@ -32,6 +33,10 @@ export default function stuff (state = {
   case types.RECEIVE_GAME:
     return update(state, {
       game: { $set: action.game }
+    })
+  case types.SET_FRAME:
+    return update(state, {
+      frame: { $set: action.frame }
     })
   default:
     return state

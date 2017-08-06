@@ -1,8 +1,8 @@
 .visualization {
   border: 1px solid #ccc;
 }
-.svg-river-none {
-  
+.svg-line,
+.svg-circle {
 }
 
 .w100 {
@@ -26,4 +26,9 @@
 }
 .text-3 {
         color: #ff00ff;
+}
+
+.scrollpane {
+  height:400px;
+  overflow-y: scroll;
 }

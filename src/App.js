@@ -5,6 +5,10 @@ import { connect } from 'react-redux'
 import Visualizer from './Visualizer'
 import Players from './Players'
 import AvailableLogs from './AvailableLogs'
+import Mapinfo from './Mapinfo'
+
+import { setFrame } from './actions'
+import { bindActionCreators } from 'redux'
 
 class App extends Component {
 
@@ -12,27 +16,54 @@ class App extends Component {
     super(props);
 
     this.state = {
-      frame: 0,
+      is_autoplay: false,
     }
     this.rangeChanged = this.rangeChanged.bind(this)
+    this.togglePlay = this.togglePlay.bind(this)
+    this.tick = this.tick.bind(this)
     
   }
 
   rangeChanged (ev) {
-    this.setState({ frame: ev.target.value })
+    this.props.actions.setFrame( ev.target.value )
   }
 
+  componentDidMount () {
+    this.timer = setInterval(this.tick, 200);
+  }
 
+  componentWillUnmount () {
+    clearInterval(this.timer)
+  }
+
+  tick () {
+    if (this.state.is_autoplay) {
+      if (this.props.frame === this.props.game.moves.length) {
+        this.setState({ is_autoplay: false })
+      } else {
+        this.props.actions.setFrame(this.props.frame + 1)
+      }
+    }
+  }
+
+  togglePlay ()  {
+    this.setState({ is_autoplay: ! this.state.is_autoplay })
+  }
 
   render () {
     return (
       <div className="container-fluid">
       <div className="col-md-9">
         <h2>puntlog visualizer</h2>
-        <Visualizer frame={this.state.frame} />
+        <Visualizer />
         <div>
-          <p>Frame {this.state.frame} of {this.props.game.moves.length + 1}</p>
-          <input type="range" value={this.state.frame} min={0} max={this.props.game.moves.length + 1} onChange={this.rangeChanged} />
+          <Mapinfo />
+          {
+            this.state.is_autoplay
+            ? <button className="btn btn-default" onClick={this.togglePlay}>Pause</button>
+            : <button className="btn btn-default" onClick={this.togglePlay}>Play</button>
+          }
+          <input type="range" value={this.props.frame} min={0} max={this.props.game.moves.length} onChange={this.rangeChanged} />
         </div>
       </div>
       <div className="col-md-3">
@@ -48,8 +79,16 @@ class App extends Component {
 const mapStateToProps = (state, ownProps) => {
   return {
     game:  state.game,
+    frame: state.frame,
+  }
+}
+
+const mapDispatchToProps = function (dispatch) {
+  return {
+    actions: bindActionCreators({setFrame}, dispatch)
   }
 }
 
 
-export default connect(mapStateToProps)(App)
+
+export default connect(mapStateToProps, mapDispatchToProps)(App)

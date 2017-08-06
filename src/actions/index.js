@@ -18,6 +18,21 @@ export function receiveGames (games) {
   }
 }
 
+export function setFrame (frame) {
+  return {
+    frame,
+    type: types.SET_FRAME,
+  }
+}
+
+export function setZoom (zoom) {
+  return {
+    zoom,
+    type: types.SET_ZOOM,
+  }
+}
+
+
 export function requestGame (id) {
   return function requestGameImpl (dispatch) {
     return axios
@@ -25,6 +40,8 @@ export function requestGame (id) {
       .then(res => {
         
         const game = res.data
+
+        game.id = id
 
         let m = game.moves
         m.reverse()
@@ -37,6 +54,7 @@ export function requestGame (id) {
           }
         })
 
+        dispatch(setFrame(0))
         dispatch(receiveGame(game))
       })
   }
