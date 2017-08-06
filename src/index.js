@@ -5,7 +5,7 @@ import { Provider } from 'react-redux'
 
 import App from './App';
 
-import { createStore, applyMiddleware, compose, combineReducers } from 'redux'
+import { createStore, applyMiddleware } from 'redux'
 import thunkMiddleware from 'redux-thunk'
 
 import { requestGames } from './actions'

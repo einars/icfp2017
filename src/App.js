@@ -6,6 +6,7 @@ import Visualizer from './Visualizer'
 import Players from './Players'
 import AvailableLogs from './AvailableLogs'
 import Mapinfo from './Mapinfo'
+import Scorebox from './Scorebox'
 
 import { setFrame } from './actions'
 import { bindActionCreators } from 'redux'
@@ -53,22 +54,24 @@ class App extends Component {
   render () {
     return (
       <div className="container-fluid">
-      <div className="col-md-9">
-        <h2>puntlog visualizer</h2>
+      <div className="col-md-9" style={{width: 1220}}>
         <Visualizer />
         <div>
-          <Mapinfo />
+          <Scorebox />
           {
             this.state.is_autoplay
             ? <button className="btn btn-default" onClick={this.togglePlay}>Pause</button>
             : <button className="btn btn-default" onClick={this.togglePlay}>Play</button>
           }
-          <input type="range" value={this.props.frame} min={0} max={this.props.game.moves.length} onChange={this.rangeChanged} />
+          {
+            <input type="range" value={this.props.frame} min={0} max={this.props.game.moves.length} onChange={this.rangeChanged} />
+          }
         </div>
       </div>
       <div className="col-md-3">
         <AvailableLogs />
         <Players />
+        <Mapinfo />
       </div>
 
     </div>

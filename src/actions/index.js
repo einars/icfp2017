@@ -12,9 +12,14 @@ export function requestGames () {
 }
 
 export function receiveGames (games) {
-  return {
-    games,
-    type: types.RECEIVE_GAMES,
+  return function receiveGamesImpl (dispatch) {
+    if (games.length > 0) {
+      dispatch(requestGame(games[0].name))
+    }
+    dispatch({
+      games,
+      type: types.RECEIVE_GAMES,
+    })
   }
 }
 

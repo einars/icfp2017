@@ -1,5 +1,8 @@
+.scorebox {
+  margin-top: 2px;
+  margin-bottom: 8px;
+}
 .visualization {
-  border: 1px solid #ccc;
 }
 .svg-line,
 .svg-circle {

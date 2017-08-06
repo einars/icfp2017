@@ -1,7 +1,7 @@
-import React, { Component } from 'react'
+import React, { PureComponent } from 'react'
 import { connect } from 'react-redux'
 
-class Players extends Component {
+class Players extends PureComponent {
 
   render () {
 
@@ -19,7 +19,7 @@ class Players extends Component {
       {
         this.props.game.scores.map( g => {
           return (
-            <tr><td>{ g.punter }</td><td className={`text-${g.punter}`}>{ g.name }</td><td>{ g.score }</td></tr>
+            <tr key={g.punter}><td>{ g.punter }</td><td className={`text-${g.punter}`}>{ g.name }</td><td>{ g.score }</td></tr>
           );
         })
       }

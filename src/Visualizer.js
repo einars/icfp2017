@@ -1,11 +1,9 @@
 import React, { Component } from 'react'
 import { connect } from 'react-redux'
 
-class Visualizer extends Component {
+import playercolors from './playercolors'
 
-  constructor (props) {
-    super(props)
-  }
+class Visualizer extends Component {
 
   line (source, dest) {
     const src = this.props.game.map.sites.find( e => e.id === source)
@@ -28,19 +26,19 @@ class Visualizer extends Component {
 
   render () {
 
-    if (this.props.game.moves.length == 0) return null
+    if (this.props.game.moves.length === 0) return null
 
     const strokeColorFor = (m) => {
       if (m.owner === null || m.frame === undefined || m.frame >= this.props.frame) {
-        return '#cccccc'
+        return playercolors.none
       } else if (m.owner === 0) {
-        return '#f20606'
+        return playercolors.p0
       } else if (m.owner === 1) {
-        return '#245aa9'
+        return playercolors.p1
       } else if (m.owner === 2) {
-        return '#36af48'
+        return playercolors.p2
       } else {
-        return '#ff00ff'
+        return playercolors.other
       }
     }
 
@@ -91,7 +89,7 @@ class Visualizer extends Component {
 
 
     return (
-      <svg width={1200} height={800} viewBox={viewbox()} className="visualization">
+      <svg width={1200} height={700} viewBox={viewbox()} className="visualization">
       {
         this.props.game.map.rivers.map( m => {
           const coords = this.line(m.source, m.target)
