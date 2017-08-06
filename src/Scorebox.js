@@ -5,7 +5,7 @@ import { bindActionCreators } from 'redux'
 
 import playercolors from './playercolors'
 
-import { LineChart, Line, Tooltip, CartesianGrid, ReferenceArea, ReferenceLine, XAxis } from 'recharts'
+import { LineChart, Line, Tooltip, CartesianGrid, ReferenceArea, XAxis } from 'recharts'
 
 
 class Scorebox extends PureComponent {
@@ -53,8 +53,6 @@ class Scorebox extends PureComponent {
 
     let out = [{step: 0}]
 
-    let r = 0
-    let idx = 1
     players.forEach( player_id => {
       let score = 0
       let moves = g.moves.map( (m, idx) => {
