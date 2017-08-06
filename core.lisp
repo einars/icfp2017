@@ -515,7 +515,8 @@
 	(format t "Considering anti-strat at ~A / ~A~%" (site-id curr-site) (site-id next-site))
 	(dolist (pot-source (site-neighbors next-site))
 	  (unless (eq pot-source curr-site)
-	    (when (find curr-site (site-neighbors pot-source))
+	    (when (and (find curr-site (site-neighbors pot-source))
+		       (> (length (intersection (site-neighbors pot-source) (site-neighbors next-site))) 1))
 	      (format t "Next river: ~A~%" (river-id curr-site pot-source))
 	      (setf (strat-network-data-anti-anti-move-state setup) 1
 		    (strat-network-data-anti-anti-move-next-river setup) (river-id curr-site pot-source)
