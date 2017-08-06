@@ -2,6 +2,8 @@
 
 require_once('/services/web/localhost/stitches/stitches.php');
 
+header('Access-Control-Allow-Origin: *');
+
 page::add_stylesheet('https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
 page::add_script('/punt/sorttable.js');
 s::add_routes([
@@ -132,6 +134,12 @@ function get_ports()
 
 function on_punt_index()
 {
+    if (get('action') == 'game') {
+        return on_game();
+    }
+    if (get('action') == 'games') {
+        return on_games();
+    }
     if (get('action') == 'run') {
         return on_run();
     }
@@ -276,4 +284,41 @@ function on_run()
 
     exec("$cmd >/dev/null 2>/dev/null &");
     die('OK');
+}
+
+function get_games()
+{
+    $files = glob('/proj/svunt/logs/*.json');
+    rsort($files);
+    $out = array();
+    foreach($files as $f) {
+        $k = basename($f);
+        $game = json_decode(file_get_contents($f), true);
+        $out[$k] = [
+            'name' => $k,
+            'path' => $f,
+            'scores' => $game['scores'],
+            'map' => basename($game['file']),
+        ];
+    }
+    return $out;
+}
+
+function on_games()
+{
+    header('Content-type: text/json');
+    @ob_end_clean();
+    echo json_encode(array_values(get_games()), JSON_PRETTY_PRINT);
+    die();
+
+}
+function on_game()
+{
+    @ob_end_clean();
+    $games = get_games();
+    if ($game = get(get('id'), $games)) {
+        readfile($game['path']);
+    }
+    die();
+
 }
