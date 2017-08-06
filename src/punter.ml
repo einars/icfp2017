@@ -6,16 +6,13 @@ open Types
 let log s = ksprintf (fun s -> printf "%s\n%!" (if (String.length s > 512) then String.sub ~pos:0 ~len:512 s else s)) s
 
 module JU = Yojson.Basic.Util
-type json = Yojson.Basic.json
-
-let json_whatever = JU.member
 
 let take_sites sjs =
   let open JU in
   List.map sjs ~f:(fun elem ->
     let id = member "id" elem |> to_int in
-    let x = json_whatever "x" elem in
-    let y = json_whatever "y" elem in
+    let x = JU.member "x" elem in
+    let y = JU.member "y" elem in
     { id; x; y }
   )
 ;;
@@ -95,6 +92,8 @@ let make_players n_players =
       handle_r = None;
       handle_w = None;
       iv_keepalive = Ivar.create ();
+
+      futures = [];
     } :: !out
   done;
   List.rev !out
@@ -358,7 +357,7 @@ let calculate_score game p =
 ;;
 
 let calculate_scores game =
-  List.map game.players ~f:(fun p -> p.id, p.name, calculate_score game p)
+  List.map game.players ~f:(fun p -> p.id, p.name, calculate_score game p + Futures.score game p)
 ;;
 
 let json_of_scores scores =
@@ -468,8 +467,10 @@ let host_game : state_t -> int -> unit Deferred.t =
     >>= fun _ ->
     log "All players connected, starting game loop";
     List.map game.players ~f:(fun p ->
-      let setup = json_of_game game p in
-      send_and_read p setup
+      let setup = json_of_game game p |> Futures.augment_setup_message in
+      send_and_read p setup 
+      >>| fun setup ->
+      Futures.augment_player game p setup
     ) |> await_all
 
     >>= play_loop

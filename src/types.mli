@@ -25,6 +25,8 @@ type player_t = {
   mutable handle_r: Reader.t option;
   mutable handle_w: Writer.t option;
   iv_keepalive: unit Ivar.t; (* ivar to signal that connection may be terminated *)
+
+  mutable futures: river_t list;
 }
 
 
