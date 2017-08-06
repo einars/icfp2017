@@ -350,17 +350,18 @@
 	(solution-exists nil)
 	(nearest-mine-id nil)
 	(nearest-mine-distance 100000000))
-    (loop as mine in (strat-network-data-master-network (state-strategy-data state))
-       as mine-id = (mine-mine-id mine)
-       as mine-info = (aref (site-mine-paths site) mine-id)
-       do (let ((score (mine-path-info-score mine-info))
-		(distance (mine-path-info-distance mine-info)))
-	    (when distance
-	      (incf site-score score)
-	      (setf solution-exists t)
-	      (when (< distance nearest-mine-distance)
-		(setf nearest-mine-id mine-id
-		      nearest-mine-distance distance)))))
+    (loop as network in (state-networks state)
+       do (loop as mine in (network-mines network)
+	     as mine-id = (mine-mine-id mine)
+	     as mine-info = (aref (site-mine-paths site) mine-id)
+	     do (let ((score (mine-path-info-score mine-info))
+		      (distance (mine-path-info-distance mine-info)))
+		  (when distance
+		    (incf site-score score)
+		    (setf solution-exists t)
+		    (when (< distance nearest-mine-distance)
+		      (setf nearest-mine-id mine-id
+			    nearest-mine-distance distance))))))
     (values (and solution-exists site-score)
 	    nearest-mine-id)))
 
@@ -410,92 +411,22 @@
 	   (state-networks state)))
 
 (defun strategy-network (state)
-  (unless (state-strategy-data state)
-    (setf (state-strategy-data state) (make-strat-network-data)))
-  (let* ((setup (state-strategy-data state))
-	 (master-network (strat-network-data-master-network setup))
-	 (alt-strategy (strat-network-data-alt-strategy setup))
-	 (next-goal (strat-network-data-next-goal setup)))
-    (if alt-strategy
-	(funcall alt-strategy state)
-	(if master-network
-	    (if next-goal
-		(strat-network-advance state)
-		(let ((best-candidate nil)
-		      (first-mine nil)
-		      (other-mine nil)
-		      (shortest-path 1000000000))
-		  (loop as mine2 in (state-mines state)
-		     do (unless (find mine2 master-network)
-			  (loop as mine1 in master-network
-			     do (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
-				  (when (and (mine-path-info-distance path-info)
-					     (< (mine-path-info-distance path-info) shortest-path))
-				    (setf shortest-path (mine-path-info-distance path-info)
-					  best-candidate (mine-site mine2)
-					  first-mine mine1
-					  other-mine mine2))))))
-		  (if best-candidate
-		      (progn
-			(setf (strat-network-data-next-goal setup) best-candidate)
-			(setf (strat-network-data-goal-mine setup) other-mine)
-			(setf (strat-network-data-origin setup) (mine-mine-id first-mine))
-			(format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
-			(strat-network-advance state))
-		      (progn
-			(format t "Giving up, could not find joinable lambdas~%")
-			(format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
-				(length master-network)
-				(mapcar #'mine-mine-id master-network))
-			(setf (strat-network-data-alt-strategy setup) #'strategy-longest)
-			(strategy-longest state)))))
-	    (let ((best-candidate nil)
-		  (first-mine nil)
-		  (other-mine nil)
-		  (shortest-path 1000000000))
-	      (loop as mine1 in (state-mines state)
-		 do (loop as mine2 in (state-mines state)
-		       do (unless (eq mine1 mine2)
-			    (let ((path-info (site-mine-path-info (mine-site mine2) (mine-mine-id mine1))))
-			      (format t "Evaluating L~d to L~d: distance ~A~%" (mine-mine-id mine1) (mine-mine-id mine2) (mine-path-info-distance path-info))
-			      (when (and (mine-path-info-distance path-info)
-					 (< (mine-path-info-distance path-info) shortest-path))
-				(setf shortest-path (mine-path-info-distance path-info)
-				      best-candidate (mine-site mine2)
-				      first-mine mine1
-				      other-mine mine2))))))
-	      (if best-candidate
-		  (progn
-		    (push first-mine (strat-network-data-master-network setup))
-		    (setf (strat-network-data-next-goal setup) best-candidate)
-		    (setf (strat-network-data-origin setup) (mine-mine-id first-mine))
-		    (setf (strat-network-data-goal-mine setup) other-mine)
-		    (format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
-		    (strat-network-advance state))
-		  (progn
-		    (format t "Giving up, could not find joinable lambdas~%")
-		    (format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
-			    (length master-network)
-			    (mapcar #'mine-mine-id master-network))
-		    (setf (strat-network-data-alt-strategy setup) #'strategy-longest)
-		    (strategy-longest state))))))))
-
-(defun strat-network-advance (state)
-  (let* ((setup (state-strategy-data state))
-	 (goal (strat-network-data-next-goal setup))
-	 (origin (strat-network-data-origin setup)))
-    (let ((next-river (next-shortest-path-river state goal origin)))
-      (unless next-river
-	(format t "Could not reach goal L~d, giving up~%" (mine-mine-id (strat-network-data-goal-mine setup)))
-	(setf (strat-network-data-next-goal setup) nil)
-	(return-from strat-network-advance (strategy-network state)))
-      (when (or (eql (site-id goal) (car next-river))
-		(eql (site-id goal) (cdr next-river)))
-	(setf (strat-network-data-next-goal setup) nil)
-	(format t "Reached L~d~%" (mine-mine-id (strat-network-data-goal-mine setup)))
-	(push (strat-network-data-goal-mine setup)
-	      (strat-network-data-master-network setup)))
-      next-river)))
+  (let ((mine-pair nil)
+	(nth-pair 0))
+    (loop as mine1 in (state-mines state)
+       do (loop as mine2 in (state-mines state)
+	     do (let ((site1 (mine-site mine1)))
+		  (let ((distance (mine-path-info-distance (site-mine-path-info site1 (mine-mine-id mine2)))))
+		    (unless (or (loop as network in (state-networks state)
+				   thereis (and (find mine1 (network-mines network))
+					    (find mine2 (network-mines network))))
+				(not distance))
+		      (incf nth-pair)
+		      (when (> (/ 1 nth-pair) (random 1.0))
+			(setf mine-pair (if (> (random 1.0) 0.5) (cons mine1 mine2) (cons mine2 mine1)))))))))
+    (if mine-pair
+	(next-shortest-path-river state (mine-site (car mine-pair)) (mine-mine-id (cdr mine-pair)))
+	(strategy-longest state))))
 
 (defun next-shortest-path-river (state site mine-id)
   (when site
