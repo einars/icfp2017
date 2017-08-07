@@ -7,6 +7,7 @@ import Players from './Players'
 import AvailableLogs from './AvailableLogs'
 import Mapinfo from './Mapinfo'
 import Scorebox from './Scorebox'
+import Droparea from './Droparea'
 
 import { setFrame } from './actions'
 import { bindActionCreators } from 'redux'
@@ -72,6 +73,7 @@ class App extends PureComponent {
         </div>
       </div>
       <div className="col-md-3">
+        <Droparea />
         <AvailableLogs />
         <Players />
         <Mapinfo />

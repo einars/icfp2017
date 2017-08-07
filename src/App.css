@@ -37,3 +37,12 @@
   width: 9em;
   display: inline-block;
 }
+
+.droparea {
+ border: 1px dashed #ccc;
+ background-color: #f6f6f6;
+ margin-top: 16px;
+ padding: 16px 8px;
+ text-align: center;
+ color: #666;
+}
