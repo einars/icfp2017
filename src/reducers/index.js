@@ -31,6 +31,7 @@ export default function stuff (state = {
       games: { $set: action.games }
     })
   case types.RECEIVE_GAME:
+    mutableTransformGame(action.game)
     return update(state, {
       game: { $set: action.game }
     })
@@ -42,6 +43,20 @@ export default function stuff (state = {
     return state
   }
 
+}
+
+const mutableTransformGame = game => {
+
+    let m = game.moves
+    m.reverse()
+    m.forEach( (m, idx) => {
+      if ( !! m.claim) {
+        const source = m.claim.source
+        const target = m.claim.target
+        const elem = game.map.rivers.find( e => (e.source === source && e.target === target) || (e.source === target && e.target === source))
+        elem.frame = idx
+      }
+    })
 }
 
 
