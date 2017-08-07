@@ -21,12 +21,14 @@ class Droparea extends PureComponent {
     ev.preventDefault()
     const files = ev.dataTransfer.files; // FileList
     const r = new FileReader()
+    const req = files[0]
     r.onloadend = (file) => {
       const game = JSON.parse(file.target.result)
-      console.log(game)
+      game.id = req.name
+      console.log(req)
       this.props.actions.receiveGame(game)
     }
-    r.readAsText(files[0])
+    r.readAsText(req)
   }
 
   render () {
