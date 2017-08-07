@@ -4,7 +4,7 @@ require_once('/services/web/localhost/stitches/stitches.php');
 
 header('Access-Control-Allow-Origin: *');
 
-page::add_stylesheet('https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
+page::add_stylesheet('//maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css');
 page::add_script('/punt/sorttable.js');
 s::add_routes([
     '' => 'on_punt_index',
@@ -25,7 +25,7 @@ CSS;
 
 function add_js()
 {
-    page::add_script('http://code.jquery.com/jquery-3.2.1.min.js');
+    page::add_script('//code.jquery.com/jquery-3.2.1.min.js');
     echo <<<SCRIPT
 <script>
 const refresh = () => {
@@ -242,6 +242,7 @@ function draw_ports($ports = null)
         <th>Port</th>
         <th>PID</th>
         <th>Commandline</th>
+        <th>&nbsp;</th>
     </tr></thead>';
     foreach($ports as $p) {
         echo '<tr>';
