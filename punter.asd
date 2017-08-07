@@ -6,4 +6,8 @@
   :depends-on (:alexandria
 	       :cl-json
 	       :usocket
+	       :flexi-streams
+	       :s-base64
+	       :cl-conspack
+	       :hu.dwim.serializer
 	       :punter/core))

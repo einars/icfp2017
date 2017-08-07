@@ -19,7 +19,48 @@
   n-punters)
 
 (defun main ()
-  )
+  (let ((*offline-game* t)
+	(start-time (get-internal-real-time)))
+    (handshake)
+    (get-command)
+    (format *error-output* "Move time: ~Ams~%~%" (- (get-internal-real-time) start-time))))
+
+(defun handshake ()
+  (game-send nil '(("me" . "RagingMushrooms")) *standard-output*)
+  (read-message))
+
+(defun get-command ()
+  (let ((message (read-message)))
+    (cond ((assocr :punter message)
+	   (init-game message *standard-output* #'strategy-evil))
+	  ((assocr :move message)
+	   (let ((state (restore-state (assocr :state message))))
+	     (game-move (assocr :move message) state #'strategy-evil *standard-output*))))))
+
+(defun restore-state (state-string)
+  (let ((start-time (get-internal-real-time)))
+    (prog1 (deserialize-state state-string)
+      (format *error-output* "Restored state: ~Ams~%" (- (get-internal-real-time) start-time)))))
+
+(defun read-message ()
+  (let ((string (read-json-string)))
+    (format *error-output* "RECEIVED: ~A~%" string)
+    (json:decode-json-from-string string)))
+
+(defun is-digit (c)
+  (and (char>= c #\0) (char<= c #\9)))
+
+(defun read-number (&optional (str ""))
+  (let ((c (read-char)))
+    (cond ((eq c #\:) (read-from-string str))
+	  ((not (is-digit c)) (read-number str))
+	  (t (read-number (format nil "~A~A" str c))))))
+
+(defun read-json-string ()
+  (let* ((size (read-number))
+	 (str (make-string size)))
+    (dotimes (i size str)
+      (setf (elt str i) (read-char)))))
 
 (defun make-state (num-sites)
   (make-state-1 :sites (make-array num-sites :initial-element nil)))
@@ -58,10 +99,21 @@
 	(*print-readably* t)
 	(*print-pretty* nil))
     (with-output-to-string (out)
-      (prin1 state out))))
+      (s-base64:encode-base64-bytes (hu.dwim.serializer:serialize state) out)
+      #+nil(conspack:tracking-refs ()
+	(s-base64:encode-base64-bytes (conspack:encode state) out)))))
 
-(defun clone-state (state)
-  (read-from-string (serialize-state state)))
+(defun deserialize-state (state)
+  (with-input-from-string (s state)
+    (let* ((input-bytes (s-base64:decode-base64-bytes s))
+	   (simple-bytes (make-array (length input-bytes) :element-type '(unsigned-byte 8) :initial-contents input-bytes)))
+      (format *error-output* "deserialize length: ~A~%" (length input-bytes))
+      (hu.dwim.serializer:deserialize simple-bytes)
+      #+nil(conspack:decode simple-bytes)))
+  #+nil(read-from-string (serialize-state state)))
+
+(defun clone-sate (state)
+  (deserialize-state (serialize-state state)))
 
 (defun assocr (item alist)
   (cdr (assoc item alist)))
@@ -144,18 +196,18 @@
 
 (defun print-state (state)
   (loop as mine in (state-mines state)
-       do (format t "Mine ~d => S~d, potential ~d~%" (mine-mine-id mine) (mine-site-id mine) (mine-potential mine)))
+       do (format *error-output* "Mine ~d => S~d, potential ~d~%" (mine-mine-id mine) (mine-site-id mine) (mine-potential mine)))
   (loop as site across (state-sites state)
        for i from 0
      do (if site
-	    (format t "S~d -> ~{~d~^, ~}~%"
+	    (format *error-output* "S~d -> ~{~d~^, ~}~%"
 		    (site-id site)
 		    (mapcar #'site-id (site-neighbors site)))
-	    (format t "S~d -> blank~%" i))
+	    (format *error-output* "S~d -> blank~%" i))
      do (when site
 	  (loop as mine-info across (site-mine-paths site)
 	     as id from 0
-	     do (format t "mine ~d score ~d distance ~A prev ~A~%"
+	     do (format *error-output* "mine ~d score ~d distance ~A prev ~A~%"
 			id
 			(mine-path-info-score mine-info)
 			(mine-path-info-distance mine-info)
@@ -235,24 +287,33 @@
 	      (state-networks state)))
     state))
 
-(defun init-game (game-setup stream)
+(defun init-game (game-setup stream strategy)
   (let ((state (load-map (assocr :map game-setup))))
     (setf (state-my-id state) (assocr :punter game-setup)
 	  (state-n-punters state) (assocr :punters game-setup))
-    (let ((data `(("ready" . ,(state-my-id state)))))
-      (when *offline-game*
-	(push (cons "state" (let ((*print-readably* t)
-				  (*print-circle* t))
-			      (format nil "~A" state)))
-	      data))
-      (game-send data stream))
+    (funcall strategy state t)
+    (format *error-output* "Sending... ")
+    (game-send state `(("ready" . ,(state-my-id state))) stream)
+    (format *error-output* "ok~%")
     state))
+
+(defun game-move (move state strategy stream)
+  (let ((*moves* (assocr :moves move)))
+    (apply-moves state *moves*)
+    (let* ((river (funcall strategy state))
+	   (source-id (car river))
+	   (target-id (cdr river)))
+      (if river
+	  (progn
+	    #+nil(claim-river state source-id target-id)
+	    (game-send state `(("claim" . (("punter" . ,(state-my-id state)) ("source" . ,source-id) ("target" . ,target-id)))) stream))
+	  (game-send state `(("pass" . (("punter" . ,(state-my-id state))))) stream)))))
 
 (defun play-game (server port strategy &key (name "zebiekste"))
   (when-let ((socket (socket-connect server port)))
     (let ((stream (socket-stream socket))
 	  (state nil))
-      (game-send `(("me" . ,name)) stream)
+      (game-send nil `(("me" . ,name)) stream)
       (when (wait-for-input socket :timeout 5)
 	(let ((response (game-decode (read-line stream))))
 	  (unless (equalp (assocr :you response) name)
@@ -260,28 +321,19 @@
       (when (or (listen stream)
 		(wait-for-input socket))
 	(let ((game-setup (game-decode (read-line stream))))
-	  (setf state (init-game game-setup stream))
-	  (format t "Setup complete, our id is ~A, total punters ~A~%" (state-my-id state) (state-n-punters state))
+	  (setf state (init-game game-setup stream strategy))
+	  (format *error-output* "Setup complete, our id is ~A, total punters ~A~%" (state-my-id state) (state-n-punters state))
 	  #+nil(print-state state)))
       (loop
 	 (when (wait-for-input socket :timeout 30)
 	   (let ((update (game-decode (read-line stream))))
-	     (if-let ((*moves* (assocr :moves (assocr :move update))))
-	       (progn
-		 (apply-moves state *moves*)
-		 (let* ((river (funcall strategy state))
-			(source-id (car river))
-			(target-id (cdr river)))
-		   (if river
-		       (progn
-			 #+nil(claim-river state source-id target-id)
-			 (game-send `(("claim" . (("punter" . ,(state-my-id state)) ("source" . ,source-id) ("target" . ,target-id)))) stream))
-		       (game-send `(("pass" . (("punter" . ,(state-my-id state))))) stream))))
+	     (if-let ((move (assocr :move update)))
+	       (game-move move state strategy stream)
 	       (let ((scores (assocr :scores (assocr :stop update))))
-		 (format t "Server scores: ~%~:{Punter ~2d => ~8d~%~}" (mapcar (lambda (score)
+		 (format *error-output* "Server scores: ~%~:{Punter ~2d => ~8d~%~}" (mapcar (lambda (score)
 										 (list (assocr :punter score) (assocr :score score)))
 									       scores))
-		 (format t "Our calculated score: ~d~%" (score-networks state))
+		 (format *error-output* "Our calculated score: ~d~%" (score-networks state))
 		 #+nil(print-state state)
 		 (return)))))))
     (socket-close socket)))
@@ -343,7 +395,7 @@
 			    best-mine-id nearest-mine-id))))))))
     (if best-candidate
 	(progn
-	  (format t "Moving towards S~d for expected payout ~d, nearest mine L~d~%"
+	  (format *error-output* "Moving towards S~d for expected payout ~d, nearest mine L~d~%"
 		  (site-id best-candidate)
 		  best-score
 		  best-mine-id)
@@ -376,7 +428,7 @@
   id
   state)
 
-(defun strategy-evil (state)
+(defun strategy-evil (state &optional init)
   (unless (state-strategy-data-2 state)
     (let ((setup (make-strat-evil-state))
 	  (my-id (state-my-id state))
@@ -389,18 +441,19 @@
 	      (setf (state-my-id (opponent-state opponent)) i))))
       (setf (strat-evil-state-opponents setup) (nreverse opponents))
       (setf (state-strategy-data-2 state) setup)))
-  (let ((setup (state-strategy-data-2 state)))
-    (dolist (opponent (strat-evil-state-opponents setup))
-      (when opponent
-	(apply-moves (opponent-state opponent) *moves*)))
-    (dolist (opponent (strat-evil-state-opponents setup))
-      (when opponent
-	(let* ((opp-state (opponent-state opponent))
-	       (best-river (strategy-greedy opp-state)))
-	  (when (cdr (touched-networks opp-state best-river))
-	    (format t "Performing DICK-MOVE on P~d~%" (opponent-id opponent))
-	    (return-from strategy-evil best-river))))))
-  (strategy-network state))
+  (unless init
+    (let ((setup (state-strategy-data-2 state)))
+      (dolist (opponent (strat-evil-state-opponents setup))
+	(when opponent
+	  (apply-moves (opponent-state opponent) *moves*)))
+      (dolist (opponent (strat-evil-state-opponents setup))
+	(when opponent
+	  (let* ((opp-state (opponent-state opponent))
+		 (best-river (strategy-greedy opp-state)))
+	    (when (cdr (touched-networks opp-state best-river))
+	      (format *error-output* "Performing DICK-MOVE on P~d~%" (opponent-id opponent))
+	      (return-from strategy-evil best-river))))))
+    (strategy-network state)))
 
 (defstruct (strat-network-data (:type list))
   master-network
@@ -425,7 +478,7 @@
 	 (alt-strategy (strat-network-data-alt-strategy setup))
 	 (next-goal (strat-network-data-next-goal setup)))
     (if alt-strategy
-	(funcall alt-strategy state)
+	(funcall #'strategy-longest state)
 	(if master-network
 	    (if next-goal
 		(strat-network-advance state)
@@ -448,14 +501,14 @@
 			(setf (strat-network-data-next-goal setup) best-candidate)
 			(setf (strat-network-data-goal-mine setup) other-mine)
 			(setf (strat-network-data-origin setup) (mine-mine-id first-mine))
-			(format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
+			(format *error-output* "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
 			(strat-network-advance state))
 		      (progn
-			(format t "Giving up, could not find joinable lambdas~%")
-			(format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
+			(format *error-output* "Giving up, could not find joinable lambdas~%")
+			(format *error-output* "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
 				(length master-network)
 				(mapcar #'mine-mine-id master-network))
-			(setf (strat-network-data-alt-strategy setup) #'strategy-longest)
+			(setf (strat-network-data-alt-strategy setup) t)
 			(strategy-longest state)))))
 	    (let ((best-candidate nil)
 		  (first-mine nil)
@@ -481,21 +534,21 @@
 		    (setf (strat-network-data-next-goal setup) best-candidate)
 		    (setf (strat-network-data-origin setup) (mine-mine-id first-mine))
 		    (setf (strat-network-data-goal-mine setup) other-mine)
-		    (format t "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
+		    (format *error-output* "Will try to join L~d with L~d, over distance ~d~%" (mine-mine-id other-mine) (mine-mine-id first-mine) shortest-path)
 		    (strat-network-advance state))
 		  (progn
-		    (format t "Giving up, could not find joinable lambdas~%")
-		    (format t "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
+		    (format *error-output* "Giving up, could not find joinable lambdas~%")
+		    (format *error-output* "Final network consists of ~d lambdas: ~{L~d~^, ~}~%"
 			    (length master-network)
 			    (mapcar #'mine-mine-id master-network))
-		    (setf (strat-network-data-alt-strategy setup) #'strategy-longest)
+		    (setf (strat-network-data-alt-strategy setup) t)
 		    (strategy-longest state))))))))
 
 (defun strat-network-advance (state)
   (let* ((setup (state-strategy-data state))
 	 (goal (strat-network-data-next-goal setup))
 	 (origin (strat-network-data-origin setup)))
-    (format t "Advancing network towards S~d from mine L~d~%" (site-id goal) origin)
+    (format *error-output* "Advancing network towards S~d from mine L~d~%" (site-id goal) origin)
     (when (and (eql (strat-network-data-anti-anti-move-state setup) 1)
 	       (find (strat-network-data-anti-anti-move-next-river setup) (state-rivers state) :test #'equalp))
       (progn
@@ -506,18 +559,18 @@
 	(return-from strat-network-advance (strat-network-data-anti-anti-move-next-river setup))))
     (multiple-value-bind (next-river curr-site next-site) (next-shortest-path-river state goal origin)
       (unless next-river
-	(format t "Could not reach goal L~d, giving up~%" (mine-mine-id (strat-network-data-goal-mine setup)))
+	(format *error-output* "Could not reach goal L~d, giving up~%" (mine-mine-id (strat-network-data-goal-mine setup)))
 	(setf (strat-network-data-next-goal setup) nil
 	      (strat-network-data-anti-anti-move-state setup) nil)
 	(return-from strat-network-advance (strategy-network state)))
-      (format t "Current anti-strat state is ~A~%" (strat-network-data-anti-anti-move-state setup))
+      (format *error-output* "Current anti-strat state is ~A~%" (strat-network-data-anti-anti-move-state setup))
       (unless (strat-network-data-anti-anti-move-state setup)
-	(format t "Considering anti-strat at ~A / ~A~%" (site-id curr-site) (site-id next-site))
+	(format *error-output* "Considering anti-strat at ~A / ~A~%" (site-id curr-site) (site-id next-site))
 	(dolist (pot-source (site-neighbors next-site))
 	  (unless (eq pot-source curr-site)
 	    (when (and (find curr-site (site-neighbors pot-source))
 		       (> (length (intersection (site-neighbors pot-source) (site-neighbors next-site))) 1))
-	      (format t "Next river: ~A~%" (river-id curr-site pot-source))
+	      (format *error-output* "Next river: ~A~%" (river-id curr-site pot-source))
 	      (setf (strat-network-data-anti-anti-move-state setup) 1
 		    (strat-network-data-anti-anti-move-next-river setup) (river-id curr-site pot-source)
 		    (strat-network-data-anti-atni-move-goal setup) curr-site)))))
@@ -525,7 +578,7 @@
 		(eql (site-id goal) (cdr next-river)))
 	(setf (strat-network-data-next-goal setup) nil
 	      (strat-network-data-anti-anti-move-state setup) nil)
-	(format t "Reached L~d~%" (mine-mine-id (strat-network-data-goal-mine setup)))
+	(format *error-output* "Reached L~d~%" (mine-mine-id (strat-network-data-goal-mine setup)))
 	(push (strat-network-data-goal-mine setup)
 	      (strat-network-data-master-network setup)))
       (if (find next-river (state-rivers state) :test #'equalp)
@@ -562,17 +615,19 @@
 	  (incf score (mine-path-info-score (site-mine-path-info site (mine-mine-id mine))))))
     score))
 
-(defun game-send (data stream)
+(defun game-send (state data stream)
+  (when (and *offline-game* state)
+    (push (cons "state" (serialize-state state))
+	  data))
   (let ((json-string (json:encode-json-to-string data)))
-    (format t "SENDING: ~d:~A" (length json-string) json-string)
+    (format *error-output* "SENDING: ~d byte message~%" (length json-string) json-string)
     (format stream "~d:~A~%" (1+ (length json-string)) json-string)
-    (finish-output stream)
-    (format t " ok~%")))
+    (finish-output stream)))
 
 (defun game-decode (string)
   (let ((delimiter-pos (position #\: string)))
     (let ((response (json:decode-json-from-string (subseq string (1+ delimiter-pos)))))
-      #+nil(format t "RECEIVED: ~A~%" response)
+      #+nil(format *error-output* "RECEIVED: ~A~%" response)
       response)))
 
 (defun score-networks (state)
