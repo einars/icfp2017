@@ -18,8 +18,9 @@ class Players extends PureComponent {
         </tr></thead><tbody>
       {
         this.props.game.scores.map( g => {
+          const c = `text-${g.punter}`
           return (
-            <tr key={g.punter}><td>{ g.punter }</td><td className={`text-${g.punter}`}>{ g.name }</td><td>{ g.score }</td></tr>
+            <tr key={g.punter}><td className={c}>{ g.punter }</td><td className={c}>{ g.name }</td><td className={c}>{ g.score }</td></tr>
           );
         })
       }

@@ -128,6 +128,16 @@ class Visualizer extends PureComponent {
         return playercolors.p1
       } else if (m.owner === 2) {
         return playercolors.p2
+      } else if (m.owner === 3) {
+        return playercolors.p3
+      } else if (m.owner === 4) {
+        return playercolors.p4
+      } else if (m.owner === 5) {
+        return playercolors.p5
+      } else if (m.owner === 6) {
+        return playercolors.p6
+      } else if (m.owner === 7) {
+        return playercolors.p7
       } else {
         return playercolors.other
       }

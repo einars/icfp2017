@@ -55,6 +55,7 @@ const mutableTransformGame = game => {
         const target = m.claim.target
         const elem = game.map.rivers.find( e => (e.source === source && e.target === target) || (e.source === target && e.target === source))
         elem.frame = idx
+        if (elem.owner === undefined) elem.owner = m.claim.punter
       }
     })
 }

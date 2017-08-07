@@ -17,6 +17,21 @@ class Droparea extends PureComponent {
     ev.preventDefault()
   }
 
+  
+  fixupCers (game) {
+    let moves = []
+    game.moves.forEach( m => {
+      moves = moves.concat(m[1].slice(1))
+    })
+    moves.reverse()
+    game.moves = moves
+    game.map = {
+      sites: game.map[0].slice(1),
+      rivers: game.map[1].slice(1),
+      mines: game.map[2].slice(1),
+    }
+  }
+
   onDrop (ev) {
     ev.preventDefault()
     const files = ev.dataTransfer.files; // FileList
@@ -25,7 +40,10 @@ class Droparea extends PureComponent {
     r.onloadend = (file) => {
       const game = JSON.parse(file.target.result)
       game.id = req.name
-      console.log(req)
+      console.log(game)
+      if ( !! game.map[0]) {
+        this.fixupCers(game)
+      }
       this.props.actions.receiveGame(game)
     }
     r.readAsText(req)

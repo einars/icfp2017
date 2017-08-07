@@ -14,19 +14,14 @@
 .w0 {
   width: auto !important;
 }
-
-.text-0 {
-        color: #f20606;
-}
-.text-1 {
-        color: #245aa9;
-}
-.text-2 {
-        color: #36af48;
-}
-.text-3 {
-        color: #ff00ff;
-}
+.text-0 {color: rgba(57, 106, 177, 1.0) }
+.text-1 {color: rgba(218, 124, 48, 1.0) }
+.text-2 {color: rgba(62, 150, 81, 1.0) }
+.text-3 {color: rgba(204, 37, 41, 1.0) }
+.text-4 {color: rgba(83, 81, 84, 1.0) }
+.text-5 {color: rgba(107, 76, 154, 1.0) }
+.text-6 {color: rgba(146, 36, 40, 1.0) }
+.text-7 {color: rgba(148, 139, 61, 1.0) }
 
 .scrollpane {
   height:400px;

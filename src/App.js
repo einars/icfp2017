@@ -32,7 +32,7 @@ class App extends PureComponent {
   }
 
   componentDidMount () {
-    this.timer = setInterval(this.tick, 200);
+    this.timer = setInterval(this.tick, 150);
   }
 
   componentWillUnmount () {
